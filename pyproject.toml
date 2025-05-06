@@ -1,7 +1,43 @@
 [project]
 name = "fullcam-client"
 version = "0.1.0"
-description = "Add your description here"
+description = "A Python client for the FullCAM Plot API"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "geopandas>=1.0.1",
+    "pandas>=2.2.3",
+    "pyarrow>=20.0.0",
+    "requests>=2.32.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+    "ruff>=0.3.0",
+]
+
+[tool.ruff]
+# Default configuration
+line-length = 100
+target-version = "py313"
+
+# Exclude files and directories
+exclude = [
+    ".git",
+    ".ruff_cache",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+# Enable pycodestyle (E), Pyflakes (F), isort (I), and numerous other linters
+select = ["E", "F", "I", "W", "N", "B", "UP"]
+ignore = []

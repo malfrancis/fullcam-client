@@ -1,0 +1,25 @@
+GET /FullCAMServer2020/DataBuilder/SiteInfo?latitude=-36.127060&longitude=149.040777&plotT=CompM&frCat=&incGrowth=true HTTP/1.1
+Connection: close
+Content-Type: application/xml
+User-Agent: Embarcadero URI Client/1.0
+FullCAM-Version: 6.20.03.0827
+Host: www.fullcam.au
+
+###
+
+GET /FullCAMServer2020/DataBuilder/Species/35?latitude=-36.127060&longitude=149.040777&frCat= HTTP/1.1
+Connection: close
+Content-Type: application/xml
+User-Agent: Embarcadero URI Client/1.0
+FullCAM-Version: 6.20.03.0827
+Host: www.fullcam.au
+###
+
+GET /FullCAMServer2020/DataBuilder/Species/50?latitude=-36.127060&longitude=149.040777&frCat= HTTP/1.1
+Connection: close
+Content-Type: application/xml
+User-Agent: Embarcadero URI Client/1.0
+FullCAM-Version: 6.20.03.0827
+Host: www.fullcam.au
+
+
