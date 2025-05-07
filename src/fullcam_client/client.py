@@ -4,13 +4,12 @@ Client for interacting with the FullCAM Plot API
 
 import io
 import logging
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
 import pyarrow as pa
 import requests
 from pyarrow import csv
-import xml.etree.ElementTree as ET
-import os
 
 from fullcam_client.exceptions import FullCAMAPIError
 from fullcam_client.simulation import Simulation
@@ -245,12 +244,12 @@ class FullCAMClient:
             tree = ET.parse(xml_stream)
             root = tree.getroot()
             doc = root.find("DocumentPlot")
-            LogEntrySet = doc.find("LogEntrySet")
-            if LogEntrySet is not None:
-                LogEntrySet.set("count", "0")
-                for entry in LogEntrySet.findall("LogEntry"):
+            log_entry_set = doc.find("LogEntrySet")
+            if log_entry_set is not None:
+                log_entry_set.set("count", "0")
+                for entry in log_entry_set.findall("LogEntry"):
                     # Remove the LogEntry element from the parent
-                    LogEntrySet.remove(entry)
+                    log_entry_set.remove(entry)
 
             txt = ET.tostring(
                 doc, encoding="utf-8", method="xml", xml_declaration=True, short_empty_elements=True

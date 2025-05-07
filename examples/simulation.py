@@ -1,21 +1,17 @@
-from fullcam_client import FullCAMClient
-import geopandas as gpd
-import pandas as pd
 import json
-from datetime import datetime, date
-from shapely.geometry import Point
-import numpy as np
+from datetime import date, datetime
 
-def convert_timestamps(d):
-    """Convert all timestamp objects in a dictionary to strings."""
-    return {
-        k: v.isoformat() if isinstance(v, (pd.Timestamp, datetime, date)) else v
-        for k, v in d.items()
-    }
+import geopandas as gpd
+import numpy as np
+import pandas as pd
+from shapely.geometry import Point
+
+from fullcam_client import FullCAMClient
+
 
 def convert_for_json(obj):
     """Convert non-serializable objects to serializable ones"""
-    if isinstance(obj, (pd.Timestamp, datetime, date)):
+    if isinstance(obj, (pd.Timestamp | datetime | date)):
         return obj.isoformat()
     elif isinstance(obj, (Point)):
         return str(obj)  # Convert geometry to WKT string representation
@@ -33,26 +29,26 @@ def convert_for_json(obj):
         return [convert_for_json(item) for item in obj]
     return obj
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     # Initialize the FullCAM client
     client = FullCAMClient(version="2020")
-    template = 'ERF\\Environmental Plantings Method.plo'
+    template = "ERF\\Environmental Plantings Method.plo"
 
     gdf = gpd.read_file("examples/BelokaCEAsMerged.geojson")
-    gdf['centroid'] = gdf.geometry.centroid
-    
+    gdf["centroid"] = gdf.geometry.centroid
+
     projected_gdf = gdf.to_crs(epsg=3577)  # Australian Albers Equal Area
-    projected_gdf['centroid'] = projected_gdf.geometry.centroid
-    projected_gdf['area_ha_albers'] = projected_gdf.geometry.area / 10000
+    projected_gdf["centroid"] = projected_gdf.geometry.centroid
+    projected_gdf["area_ha_albers"] = projected_gdf.geometry.area / 10000
 
     for i in range(len(gdf)):
-        centroid = gdf.at[i, 'geometry'].centroid 
-        area = projected_gdf.at[i, 'area_ha_albers']
+        centroid = gdf.at[i, "geometry"].centroid
+        area = projected_gdf.at[i, "area_ha_albers"]
 
-        plant_date = gdf.at[i, 'Plant Date']
-        config = gdf.at[i, 'Configuration']
-        layer = gdf.at[i, 'layer']
+        plant_date = gdf.at[i, "Plant Date"]
+        config = gdf.at[i, "Configuration"]
+        layer = gdf.at[i, "layer"]
 
         simulation = client.create_simulation_from_template(template, layer)
 
@@ -60,12 +56,9 @@ if __name__ == "__main__":
             "layer": layer,
             "area": area,
             "plant_date": plant_date.strftime("%Y-%m-%d"),
-            "centroid": {
-                "latitude": centroid.y,
-                "longitude": centroid.x
-            },
+            "centroid": {"latitude": centroid.y, "longitude": centroid.x},
             "configuration": config,
-            "properties": convert_for_json(gdf.iloc[i].drop('geometry').to_dict())
+            "properties": convert_for_json(gdf.iloc[i].drop("geometry").to_dict()),
         }
         simulation.about.name = layer
         simulation.about.notes = json.dumps(notes)
@@ -82,4 +75,3 @@ if __name__ == "__main__":
         # Run the simulation
         results = simulation.run()
         simulation.save_csv(f"examples/{layer}.csv")
-        

@@ -8,15 +8,15 @@ comparing their results, and creating visualizations.
 import io
 import logging
 import os
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass
 from datetime import datetime
+from xml.etree.ElementTree import Element
 
 import pandas as pd
 import pyarrow as pa
 from pyarrow import csv
-from dataclasses import dataclass
-import xml.etree.ElementTree as ET
-from typing import Optional, Union
-from xml.etree.ElementTree import Element
+
 from fullcam_client.exceptions import FullCAMClientError
 
 # Configure logging
@@ -25,42 +25,46 @@ logging.basicConfig(
 )
 logger = logging.getLogger("fullcam_client.simulation")
 
+
 @dataclass
 class Build:
     def __init__(self, build: Element):
-        latitude= build.get("latBL")
-        longitude= build.get("lonBL")   
+        self.latitude = build.get("latBL")
+        self.longitude = build.get("lonBL")
 
     latitude: float = 0.0
-    longitude: float = 0.0 
+    longitude: float = 0.0
+
 
 @dataclass
 class Timing:
     def __init__(self, timing: Element):
-        start_date_el= timing.find("stDateTM")
-        end_date_el= timing.get("enDateTM")
+        start_date_el = timing.find("stDateTM")
+        end_date_el = timing.get("enDateTM")
         if start_date_el is not None:
-            start_date= datetime.strptime(start_date_el.text, "%Y%m%d").date()
+            self.start_date = datetime.strptime(start_date_el.text, "%Y%m%d").date()
         if end_date_el is not None:
-            end_date= datetime.strptime(end_date_el.text, "%Y%m%d").date()
+            self.end_date = datetime.strptime(end_date_el.text, "%Y%m%d").date()
 
-    start_date: Optional[datetime] = None
-    end_date: Optional[datetime] = None
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+
 
 @dataclass
 class About:
     def __init__(self, meta: Element):
-        name= meta.get("nmME")
-        notes_el= meta.find("notesME")
+        self.name = meta.get("nmME")
+        notes_el = meta.find("notesME")
         if notes_el is not None:
-            notes= notes_el.text
+            self.notes = notes_el.text
         else:
-            notes= None
-        version= meta.get("savedByVersion")
+            self.notes = None
+        self.version = meta.get("savedByVersion")
 
     name: str = ""
-    notes: Optional[str] = None 
+    notes: str | None = None
     version: str = ""
+
 
 class Simulation:
     """
@@ -116,7 +120,7 @@ class Simulation:
             logger.info(f"Initialized simulation '{name}' with provided XML content")
         else:
             raise ValueError("Either plot_file or xml_content must be provided")
-        
+
         xml_stream = io.BytesIO(self.xml_content.encode())
         self.tree = ET.parse(xml_stream)
         root = self.tree.getroot()
@@ -276,6 +280,8 @@ class Simulation:
         try:
             root = self.tree.getroot()
 
+            # set the page to the about tab
+            root.set("pageIxDO", "0")
             meta = root.find("Meta")
             if meta is not None:
                 meta.set("nmME", self.about.name)
@@ -293,7 +299,9 @@ class Simulation:
                 if start_date_el is not None and self.timing.start_date:
                     start_date_el.text = self.timing.start_date.strftime("%Y%m%d")
                 else:
-                    logger.warning("Start date element not found in XML. Skipping start date update.")
+                    logger.warning(
+                        "Start date element not found in XML. Skipping start date update."
+                    )
 
                 end_date_el = timing.find("enDateTM")
                 if end_date_el is not None and self.timing.end_date:
@@ -306,12 +314,13 @@ class Simulation:
                 build.set("latBL", str(self.build.latitude))
                 build.set("lonBL", str(self.build.longitude))
             else:
-                logger.warning("Build element not found in XML. Skipping latitude and longitude update.")
-
+                logger.warning(
+                    "Build element not found in XML. Skipping latitude and longitude update."
+                )
 
             ET.indent(self.tree)
-            self.tree.write(file_path, encoding="utf-8", xml_declaration=True, method='xml')
-            #with open(file_path, "w", encoding="utf-8") as f:
+            self.tree.write(file_path, encoding="utf-8", xml_declaration=True, method="xml")
+            # with open(file_path, "w", encoding="utf-8") as f:
             #    f.write(self.xml_content)
 
             # Update plot_file attribute
