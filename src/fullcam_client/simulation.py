@@ -385,7 +385,21 @@ class Simulation:
                 init_soil_a.set("biofCMInitA", str(0.0))
                 init_soil_a.set("biosCMInitA", str(0.0))
 
+                forest_species_list = []
+                forest_species = location_root.find("ItemList[@id='FrSpecies']")
+                for item in forest_species:
+                    spec={
+                        "id": item.get("id"),
+                        "name": item.get("value"),
+                    }
+                    forest_species_list.append(spec)
+
+                
+
+
             logger.info(f"Applied location XML content to simulation '{self.name}'")
+
+            return forest_species_list
         except Exception as e:
             logger.error(f"Failed to apply location XML: {str(e)}")
             raise FullCAMClientError(f"Failed to apply location XML: {str(e)}") from e

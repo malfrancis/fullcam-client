@@ -75,7 +75,18 @@ if __name__ == "__main__":
             forest_category=simulation.build.forest_category,
         )
 
-        simulation.apply_location_xml(xml)
+        species_list = simulation.apply_location_xml(xml)
+
+        #find "Mixed species environmental planting" in the species list
+        species = [
+            species for species in species_list if "Mixed species environmental planting" in species["name"]
+        ]
+        # Get the first species in the list
+        if species:
+            env_planting = species[0]
+        else:
+            print(f"No species found for {layer}") 
+
 
         simulation.save_to_plo(f"examples/{layer}.plo")
 
