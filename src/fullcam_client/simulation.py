@@ -309,7 +309,8 @@ class Simulation:
                 logger.warning("Build element not found in XML. Skipping latitude and longitude update.")
 
 
-            self.tree.write(file_path, encoding="utf-8", xml_declaration=True)
+            ET.indent(self.tree)
+            self.tree.write(file_path, encoding="utf-8", xml_declaration=True, method='xml')
             #with open(file_path, "w", encoding="utf-8") as f:
             #    f.write(self.xml_content)
 
