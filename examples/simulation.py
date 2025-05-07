@@ -62,10 +62,21 @@ if __name__ == "__main__":
         }
         simulation.about.name = layer
         simulation.about.notes = json.dumps(notes)
-        simulation.build.latitude = centroid.y
-        simulation.build.longitude = centroid.x
+        simulation.timing.use_daily_timing = False
         simulation.timing.start_date = plant_date
         simulation.timing.end_date = plant_date + pd.DateOffset(years=25)
+        simulation.build.latitude = centroid.y
+        simulation.build.longitude = centroid.x
+        simulation.build.forest_category = "ERF"
+
+        xml = client.get_location_xml(
+            simulation.build.latitude,
+            simulation.build.longitude,
+            forest_category=simulation.build.forest_category,
+        )
+
+        simulation.apply_location_xml(xml)
+
         simulation.save_to_plo(f"examples/{layer}.plo")
 
         # Update the site data and get the species

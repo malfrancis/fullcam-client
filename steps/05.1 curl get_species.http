@@ -1,0 +1,18 @@
+curl 'https://www.fullcam.gov.au/api/2020/data-builder/species?specId=35&latitude=-36.5569397346399&longitude=148.739277343175&area=Cell&frCat=ERF' \
+  -H 'accept: application/json, text/plain, */*' \
+  -H 'accept-language: en-US,en;q=0.9' \
+  -H 'authorization: Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6IjBpNURncEVGcW1UVGxxb000MWZfVVhtNTJWOU85VGRFUEhPd2tqUHlQa2ciLCJ0eXAiOiJKV1QifQ.eyJhdWQiOiJhZmUzN2MxYS1iMTgyLTQ4YmMtYTE1YS05NGZkZTg0MDBlNDgiLCJpc3MiOiJodHRwczovL2F1dGguZGNjZWV3Lmdvdi5hdS9iNWU5MDE0ZC1hM2Q0LTQ5MDMtOWViNS05OWJmMjljNTdiZDIvdjIuMC8iLCJleHAiOjE3NDY1ODQ1NjMsIm5iZiI6MTc0NjU4MDk2Mywic3ViIjoiMTliYzdhZWItN2ZkMi00NWRmLTk5ZGQtY2UxMTk5MDI3YmIwIiwib2lkIjoiMTliYzdhZWItN2ZkMi00NWRmLTk5ZGQtY2UxMTk5MDI3YmIwIiwibmFtZSI6Ik1hbCBGcmFuY2lzIiwiZW1haWwiOiJtYWxjb2xtLmZyYW5jaXNAYm93cnVzaC5jb20iLCJnaXZlbl9uYW1lIjoiTWFsIiwiZmFtaWx5X25hbWUiOiJGcmFuY2lzIiwidGlkIjoiYjVlOTAxNGQtYTNkNC00OTAzLTllYjUtOTliZjI5YzU3YmQyIiwibm9uY2UiOiJmOTYxYTI5My1hNDk4LTQ2YWYtODZjYS0wYTM0MjY1NWE0NjgiLCJzY3AiOiJhdXRob3Jpc2VkLmFjY2VzcyIsImF6cCI6ImFmZTM3YzFhLWIxODItNDhiYy1hMTVhLTk0ZmRlODQwMGU0OCIsInZlciI6IjEuMCIsImlhdCI6MTc0NjU4MDk2M30.eeCtzybtwwBr5IR-lleaxsK9w7KJzXKh8cc0IrAQv49sLeWEFoTeVmuLKn3GuoE8LuwU_h7ZHj75Ru9knaDXFQ338RqYM8qIYYQ-Dw2lnUYy3BGIGPMWEyJrSc_9AQOTKi75QYBdzcL7CBMkgH9JvtoV0XjjRKNDIqmULR4aozGnQD_BWLRe4aTN9sF_dj7wH0tMfpBSwELA01t3nzo6fwSzO75IjtOsoFlF5vl7EUkBefBp-qnYqkDAxRDz6iCfnt014y0C_cYvW8pWpFqwK3rjU9-Uq1DgWW7BHhFbctqAHgVu9u7NTNFQWjQ3p5KZNOxOHCrECSRPvhvdcEoN3w' \
+  -b 'ai_user=24aP2wiLR7p+55cJG/J8Ho|2025-03-27T00:59:36.950Z; _ga=GA1.1.1318042288.1743037177; SessionPersistenceCORS=1c5a45bfdafd58d3876070b95849d58f; SessionPersistence=1c5a45bfdafd58d3876070b95849d58f; ASLBSA=0003cf9226b1971e3252786a82d57d3b8c5bd5efaaf99cd235ad4e09251bf59575a0; ASLBSACORS=0003cf9226b1971e3252786a82d57d3b8c5bd5efaaf99cd235ad4e09251bf59575a0; ai_session=O77B5wVJNC0JGU3QaJWWMo|1746580961997|1746581650995; _ga_4TX4T69MMQ=GS2.1.s1746580961$o10$g1$t1746581679$j0$l0$h0' \
+  -H 'priority: u=1, i' \
+  -H 'referer: https://www.fullcam.gov.au/simulation-2020/plo' \
+  -H 'request-id: |e22169cd41d8405caf878b4ee94c4173.617c48da2e6b413e' \
+  -H 'sec-ch-ua: "Google Chrome";v="135", "Not-A.Brand";v="8", "Chromium";v="135"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Windows"' \
+  -H 'sec-fetch-dest: empty' \
+  -H 'sec-fetch-mode: cors' \
+  -H 'sec-fetch-site: same-origin' \
+  -H 'traceparent: 00-e22169cd41d8405caf878b4ee94c4173-617c48da2e6b413e-01' \
+  -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36' \
+  -H 'userguidid: E2BEB95C-A447-43BB-B578-369951E9299E' \
+  -H 'userid: 19bc7aeb-7fd2-45df-99dd-ce1199027bb0'

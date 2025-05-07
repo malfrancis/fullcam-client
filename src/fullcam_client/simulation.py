@@ -31,20 +31,40 @@ class Build:
     def __init__(self, build: Element):
         self.latitude = build.get("latBL")
         self.longitude = build.get("lonBL")
+        self.forest_category = build.get("frCat")
 
     latitude: float = 0.0
     longitude: float = 0.0
+    forest_category: str = ""  # Forest category (e.g., "ERF", "NPP", etc.)
 
 
 @dataclass
 class Timing:
     def __init__(self, timing: Element):
-        start_date_el = timing.find("stDateTM")
-        end_date_el = timing.get("enDateTM")
-        if start_date_el is not None:
-            self.start_date = datetime.strptime(start_date_el.text, "%Y%m%d").date()
-        if end_date_el is not None:
-            self.end_date = datetime.strptime(end_date_el.text, "%Y%m%d").date()
+        """
+        <Timing dailyTimingTZ="true" useDaysPerStepDTZ="true" daysPerStepDTZ="1" stepsPerDayDTZ="1" outputFreqDTZ="Monthly" stepsPerOutDTZ="1" firstOutStepDTZ="1" tStepsYTZ="Monthly" stepsPerYrYTZ="110" stYrYTZ="" stStepInStYrYTZ="" enYrYTZ="" enStepInEnYrYTZ="" stepsPerOutYTZ="1" firstOutStepYTZ="1">
+            <stDateTM CalendarSystemT="Gregorian">20100101</stDateTM>
+            <enDateTM CalendarSystemT="Gregorian">21100101</enDateTM>
+        </Timing>
+
+        <Timing dailyTimingTZ="false" useDaysPerStepDTZ="true" daysPerStepDTZ="1" stepsPerDayDTZ="1" outputFreqDTZ="Daily" stepsPerOutDTZ="1" firstOutStepDTZ="1" tStepsYTZ="Monthly" stepsPerYrYTZ="110" stYrYTZ="2025" stStepInStYrYTZ="8" enYrYTZ="2050" enStepInEnYrYTZ="8" stepsPerOutYTZ="1" firstOutStepYTZ="1"/>
+
+        """
+        self.use_daily_timing = timing.get("dailyTimingTZ") == "true"
+        if self.use_daily_timing:
+            start_date_el = timing.find("stDateTM")
+            end_date_el = timing.find("enDateTM")
+            if start_date_el is not None:
+                self.start_date = datetime.strptime(start_date_el.text, "%Y%m%d").date()
+            if end_date_el is not None:
+                self.end_date = datetime.strptime(end_date_el.text, "%Y%m%d").date()
+        else:
+            start_year = int(timing.get("stYrYTZ", "0"))
+            start_step = int(timing.get("stStepInStYrYTZ", "0"))
+            end_year = int(timing.get("enYrYTZ", "0"))
+            end_step = int(timing.get("enStepInEnYrYTZ", "0"))
+            self.start_date = datetime(start_year, 1, 1) + pd.DateOffset(months=start_step - 1)
+            self.end_date = datetime(end_year, 1, 1) + pd.DateOffset(months=end_step - 1)
 
     start_date: datetime | None = None
     end_date: datetime | None = None
@@ -264,6 +284,112 @@ class Simulation:
             "metadata": self.metadata,
         }
 
+    def update_time_series(self, old_ts: Element, new_ts: Element) -> None:
+        try:
+            old_ts.clear()
+            for attr in new_ts.attrib:
+                old_ts.set(attr, new_ts.get(attr))
+            for child in new_ts:
+                old_ts.append(child)
+        except Exception as e:
+            logger.error(f"Failed to update time series data: {str(e)}")
+            raise FullCAMClientError(f"Failed to update time series data: {str(e)}") from e
+
+    def apply_location_xml(self, xml_content: str) -> None:
+        """
+        Apply location XML content to the simulation.
+
+        Args:
+            xml_content: XML content as a string
+
+        Raises:
+            ValueError: If the XML content is invalid
+        """
+        try:
+            doc_root = self.tree.getroot()
+
+            xml_stream = io.BytesIO(xml_content.encode())
+            location_tree = ET.parse(xml_stream)
+            location_root = location_tree.getroot()
+
+            site_info = location_root.find("SiteInfo")
+            site = doc_root.find("Site")
+            if site_info is not None:
+                logger.info(
+                    f"Location data downloaded for {site_info.get('state')} SA2 {site_info.get('sa2Name')}(siteId: {site_info.get('SA2')}) NPI {site_info.get('npi')} "
+                )
+
+                new_soil_base = location_root.find("LocnSoil/SoilBase")
+                soil_base = doc_root.find("Soil/SoilBase")
+                soil_base.clear()
+                for child in new_soil_base:
+                    soil_base.append(child)
+
+                maxAbgMF = location_root.find("InputElement[@tIn='maxAbgMF']").get("value")
+                fpiAvgLT = location_root.find("InputElement[@tIn='fpiAvgLT']").get("value")
+                site.set("maxAbgMF", maxAbgMF)
+                site.set("fpiAvgLT", fpiAvgLT)
+
+                new_rainfall = location_root.find("InputElement[@tIn='rainfall']").find(
+                    "TimeSeries"
+                )
+                if new_rainfall is not None:
+                    rainfall = site.find("TimeSeries[@tInTS='rainfall']")
+                    self.update_time_series(rainfall, new_rainfall)
+
+                new_openPanEvap = location_root.find("InputElement[@tIn='openPanEvap']").find(
+                    "TimeSeries"
+                )
+                if new_openPanEvap is not None:
+                    openPanEvap = site.find("TimeSeries[@tInTS='openPanEvap']")
+                    self.update_time_series(openPanEvap, new_openPanEvap)
+
+                new_avgAirTemp = location_root.find("InputElement[@tIn='avgAirTemp']").find(
+                    "TimeSeries"
+                )
+                if new_avgAirTemp is not None:
+                    avgAirTemp = site.find("TimeSeries[@tInTS='avgAirTemp']")
+                    self.update_time_series(avgAirTemp, new_avgAirTemp)
+
+                tAirTemp = location_root.find("InputElement[@tIn='tAirTemp']").get("value")
+                new_forestProdIx = location_root.find("InputElement[@tIn='forestProdIx']").find(
+                    "TimeSeries"
+                )
+                if new_forestProdIx is not None:
+                    forestProdIx = site.find("TimeSeries[@tInTS='forestProdIx']")
+                    self.update_time_series(forestProdIx, new_forestProdIx)
+
+                location_soil = location_root.find("LocnSoil")
+                initFracDpma = float(location_soil.get("initFracDpma"))
+                initFracRpma = float(location_soil.get("initFracRpma"))
+                initFracHums = float(location_soil.get("initFracHums"))
+                initFracInrt = float(location_soil.get("initFracInrt"))
+                initFracBiof = float(location_soil.get("initFracBiof"))
+                initFracBios = float(location_soil.get("initFracBios"))
+                initTotalC = float(location_soil.get("initTotalC"))
+                soilCoverA = float(location_soil.get("soilCoverA"))
+
+                init_soil_f = doc_root.find("Init/InitSoilF")
+                init_soil_f.set("dpmaCMInitF", str(initTotalC * initFracDpma))
+                init_soil_f.set("rpmaCMInitF", str(initTotalC * initFracRpma))
+                init_soil_f.set("humsCMInitF", str(initTotalC * initFracHums))
+                init_soil_f.set("inrtCMInitF", str(initTotalC * initFracInrt))
+                init_soil_f.set("biofCMInitF", str(initTotalC * initFracBiof))
+                init_soil_f.set("biosCMInitF", str(initTotalC * initFracBios))
+
+                init_soil_a = doc_root.find("Init/InitSoilA")
+                init_soil_a.set("dpmaCMInitA", str(0.0))
+                init_soil_a.set("rpmaCMInitA", str(0.0))
+                init_soil_a.set("humsCMInitA", str(0.0))
+                init_soil_a.set("inrtCMInitA", str(0.0))
+                init_soil_a.set("biofCMInitA", str(0.0))
+                init_soil_a.set("biosCMInitA", str(0.0))
+
+            logger.info(f"Applied location XML content to simulation '{self.name}'")
+        except Exception as e:
+            logger.error(f"Failed to apply location XML: {str(e)}")
+            raise FullCAMClientError(f"Failed to apply location XML: {str(e)}") from e
+
     def save_to_plo(self, file_path: str) -> None:
         """
         Save the simulation XML content to a .plo file.
@@ -296,23 +422,40 @@ class Simulation:
             timing = root.find("Timing")
             if timing is not None:
                 start_date_el = timing.find("stDateTM")
-                if start_date_el is not None and self.timing.start_date:
-                    start_date_el.text = self.timing.start_date.strftime("%Y%m%d")
-                else:
-                    logger.warning(
-                        "Start date element not found in XML. Skipping start date update."
-                    )
-
                 end_date_el = timing.find("enDateTM")
-                if end_date_el is not None and self.timing.end_date:
-                    end_date_el.text = self.timing.end_date.strftime("%Y%m%d")
+                if self.timing.use_daily_timing:
+                    timing.set("dailyTimingTZ", "true")
+                    timing.set("stYrYTZ", "")
+                    timing.set("stStepInStYrYTZ", "")
+                    timing.set("enYrYTZ", "")
+                    timing.set("enStepInEnYrYTZ", "")
+                    if start_date_el is None:
+                        start_date_el = ET.SubElement(timing, "stDateTM")
+                    if end_date_el is None:
+                        end_date_el = ET.SubElement(timing, "enDateTM")
+                    if self.timing.start_date:
+                        start_date_el.text = self.timing.start_date.strftime("%Y%m%d")
+                    if self.timing.end_date:
+                        end_date_el.text = self.timing.end_date.strftime("%Y%m%d")
                 else:
-                    logger.warning("End date element not found in XML. Skipping end date update.")
+                    start_year = self.timing.start_date.year
+                    start_step = self.timing.start_date.month
+                    end_year = self.timing.end_date.year
+                    end_step = self.timing.end_date.month
+
+                    timing.set("dailyTimingTZ", "false")
+                    timing.set("stYrYTZ", str(start_year))
+                    timing.set("stStepInStYrYTZ", str(start_step))
+                    timing.set("enYrYTZ", str(end_year))
+                    timing.set("enStepInEnYrYTZ", str(end_step))
+                    timing.remove(start_date_el)
+                    timing.remove(end_date_el)
 
             build = root.find("Build")
             if build is not None:
                 build.set("latBL", str(self.build.latitude))
                 build.set("lonBL", str(self.build.longitude))
+                build.set("frCat", self.build.forest_category)
             else:
                 logger.warning(
                     "Build element not found in XML. Skipping latitude and longitude update."
@@ -320,8 +463,6 @@ class Simulation:
 
             ET.indent(self.tree)
             self.tree.write(file_path, encoding="utf-8", xml_declaration=True, method="xml")
-            # with open(file_path, "w", encoding="utf-8") as f:
-            #    f.write(self.xml_content)
 
             # Update plot_file attribute
             self.plot_file = file_path
