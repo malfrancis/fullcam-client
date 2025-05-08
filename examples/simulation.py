@@ -41,7 +41,8 @@ if __name__ == "__main__":
     projected_gdf = gdf.to_crs(epsg=3577)  # Australian Albers Equal Area
     projected_gdf["centroid"] = projected_gdf.geometry.centroid
     projected_gdf["area_ha_albers"] = projected_gdf.geometry.area / 10000
-
+    
+    all_results = []
     for i in range(len(gdf)):
         centroid = gdf.at[i, "geometry"].centroid
         area = projected_gdf.at[i, "area_ha_albers"]
@@ -68,6 +69,7 @@ if __name__ == "__main__":
         simulation.build.latitude = centroid.y
         simulation.build.longitude = centroid.x
         simulation.build.forest_category = "ERF"
+        #simulation.download_location_data()
 
         xml = client.get_location_xml(
             simulation.build.latitude,
@@ -87,15 +89,28 @@ if __name__ == "__main__":
         else:
             print(f"No species found for {layer}") 
 
+        spec_xml = client.get_species_xml(
+            simulation.build.latitude,
+            simulation.build.longitude,            
+            forest_category=simulation.build.forest_category,
+            species_id=env_planting["id"])
+
+        simulation.apply_species_xml(spec_xml, env_planting["id"], "Plant trees: Mixed species environmental planting on land managed for environmental services", plant_date)
 
         simulation.save_to_plo(f"examples/{layer}.plo")
-
-        break
-
-        # Update the site data and get the species
-
-        # Add the Plant Event
-
+        
         # Run the simulation
-        #results = simulation.run()
+        results = simulation.run()
         #simulation.save_csv(f"examples/{layer}.csv")
+        df = simulation.to_dataframe()
+        df["layer"] = layer
+        all_results.append(df)
+
+        
+    # After the loop completes, concatenate all results
+    combined_df = pd.concat(all_results, ignore_index=True)
+
+    # Now you can work with the combined DataFrame
+    print(f"Combined results: {len(combined_df)} rows")
+    combined_df.to_csv("examples/all_results.csv", index=False)
+    combined_df.to_parquet("examples/all_results.parquet", index=False)

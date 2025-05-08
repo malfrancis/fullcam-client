@@ -337,3 +337,55 @@ class FullCAMClient:
 
         # Create and return a Simulation object
         return Simulation(name=simulation_name, xml_content=xml_content, client=self)
+
+    def get_species_xml(
+        self,
+        latitude: float,
+        longitude: float,
+        area: str = "Cell",
+        forest_category: str = "ERF",
+        species_id: int = 0,
+        version: int = 2020,
+    ) -> str:
+
+        headers = {"Ocp-Apim-Subscription-Key": self.subscription_key}
+        templates_url = f"{self.api_url}/data/v1/2020/data-builder/species?latitude={latitude}&longitude={longitude}&area={area}&frCat={forest_category}&specId={species_id}"
+        logger.info("Fetching species info from the FullCAM API")
+        try:
+            response = requests.get(templates_url, headers=headers)
+
+            # Check for successful response
+            if response.status_code != 200:
+                logger.error(f"API request failed with status code {response.status_code}")
+                raise FullCAMAPIError(
+                    "Failed to get data from the FullCAM API",
+                    status_code=response.status_code,
+                    response_text=response.text,
+                )
+
+            xml_stream = io.BytesIO(response.text.encode())
+            tree = ET.parse(xml_stream)
+            doc_fragment = tree.getroot()
+            if doc_fragment is not None:
+                if version == 2020 and doc_fragment.get("Version") != "5007":
+                    logger.error(f"API request failed with status code {response.status_code}")
+                    raise FullCAMAPIError(
+                        f"Ivalid document fragment version {doc_fragment.get('Version')} for 2020",
+                    )
+
+            txt = ET.tostring(
+                doc_fragment,
+                encoding="utf-8",
+                method="xml",
+                xml_declaration=True,
+                short_empty_elements=True,
+            ).decode("utf-8")
+            return txt
+
+        except requests.RequestException as e:
+            logger.error(f"Request exception: {str(e)}")
+            raise FullCAMAPIError(f"Failed to connect to FullCAM API: {str(e)}") from e
+        except ET.ParseError as e:
+            logger.error(f"XML parse error: {str(e)}")
+            raise FullCAMAPIError(f"Failed to parse XML response: {str(e)}") from e
+

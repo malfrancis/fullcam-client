@@ -16,6 +16,7 @@ from xml.etree.ElementTree import Element
 import pandas as pd
 import pyarrow as pa
 from pyarrow import csv
+import copy
 
 from fullcam_client.exceptions import FullCAMClientError
 
@@ -181,8 +182,17 @@ class Simulation:
         start_time = datetime.now()
 
         try:
+            root = self.tree.getroot()
+            plot_xml = ET.tostring(
+                root,
+                encoding="utf-8",
+                method="xml",
+                xml_declaration=True,
+                short_empty_elements=True,
+            ).decode("utf-8")
+
             # Run the simulation
-            self.arrow_table = self.client.simulate(self.xml_content)
+            self.arrow_table = self.client.simulate(plot_xml)
 
             # Update metadata
             end_time = datetime.now()
@@ -486,6 +496,68 @@ class Simulation:
             logger.error(f"Failed to apply location XML: {str(e)}")
             raise FullCAMClientError(f"Failed to apply location XML: {str(e)}") from e
 
+    def apply_species_xml(self, spec_xml, species_id, plant_event_name, plant_date) -> None:
+        """
+        Apply species XML content to the simulation.
+
+        Args:
+            spec_xml: XML content as a string
+            species_id: Species ID to apply
+
+        Raises:
+            ValueError: If the XML content is invalid
+        """
+        try:
+            doc_root = self.tree.getroot()
+            doc_species_forest_set = doc_root.find("SpeciesForestSet")
+
+            xml_stream = io.BytesIO(spec_xml.encode())
+            xml_species_tree = ET.parse(xml_stream)
+            xml_species_root = xml_species_tree.getroot()
+
+            # Find the species element in the simulation XML tree
+            xml_species_element = xml_species_root.find(f"SpeciesForest[@idSP='{species_id}']")
+            if xml_species_element is None:
+                raise ValueError(f"Species with ID '{species_id}' not found in simulation XML.")
+
+            species_count = len(doc_species_forest_set.findall("SpeciesForest"))
+            spec_id = species_count + 1
+            new_species_element = copy.deepcopy(xml_species_element)
+            new_species_element.set("idSP", str(spec_id))
+
+            for event in new_species_element.findall("EventQ/Event"):
+                event.set("idSP", str(spec_id))
+            
+            for tyf_params in new_species_element.findall("Growth/TYFParameters"):
+                tyf_params.set("idSP", str(spec_id))
+
+            doc_species_forest_set.append(new_species_element)
+            doc_species_forest_set.set("count", str(spec_id))
+
+            eventQ = doc_root.find("EventQ")
+            events_count = len(eventQ.findall("Event"))
+            eventQ.set("count", str(events_count + 1))
+            xml_plant_event = xml_species_element.find(f"EventQ/Event[@nmEV='{plant_event_name}']")
+            if xml_plant_event is not None:
+                new_event = copy.deepcopy(xml_plant_event)
+                new_event.set("regimeInstance", "1")
+                new_event.set("nmRegime", "New Regime")
+                new_event.set("idSP", str(spec_id))
+                new_event.set("tEvent", "Doc")
+                new_event.set("nYrsFromStEV", "0")
+                new_event.set("nDaysFromStEV", "0")
+                dateEV = Element("dateEV", {"CalendarSystemT": "FixedLength"})
+                dateEV.text = plant_date.strftime("%Y%m%d")
+                #new_event.append(dateEV)
+                eventQ.insert(0, new_event)
+                new_event.insert(1, dateEV)
+            
+
+            logger.info(f"Applied species XML content to simulation '{self.name}' for species ID '{species_id}'")
+        except Exception as e:
+            logger.error(f"Failed to apply species XML: {str(e)}")
+            raise FullCAMClientError(f"Failed to apply species XML: {str(e)}") from e
+
     def save_to_plo(self, file_path: str) -> None:
         """
         Save the simulation XML content to a .plo file.
@@ -558,7 +630,7 @@ class Simulation:
                 )
 
             ET.indent(self.tree)
-            self.tree.write(file_path, encoding="utf-8", xml_declaration=True, method="xml")
+            self.tree.write(file_path, encoding="utf-8", xml_declaration=True, method="xml",)
 
             # Update plot_file attribute
             self.plot_file = file_path
