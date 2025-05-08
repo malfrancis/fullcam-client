@@ -10,7 +10,7 @@ import logging
 import os
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from xml.etree.ElementTree import Element
 
 import pandas as pd
@@ -294,6 +294,74 @@ class Simulation:
         except Exception as e:
             logger.error(f"Failed to update time series data: {str(e)}")
             raise FullCAMClientError(f"Failed to update time series data: {str(e)}") from e
+        
+
+
+    def get_time_series_value(self, time_series_element, target_date=None):
+
+        input_id = time_series_element.get("tInTS")
+        extrap_type = time_series_element.get("tExtrapTS")
+        origin = time_series_element.get("tOriginTS")
+        start_year = int(time_series_element.get("yr0TS", "0"))
+        data_per_year = int(time_series_element.get("dataPerYrTS", "1"))
+        if extrap_type != "AvgYr" or data_per_year != 1 or origin != "Calendar":
+            raise ValueError(
+                f"Unsupported TimeSeries ({input_id}) attributes: tExtrapTS={extrap_type}, dataPerYrTS={data_per_year}, tOriginTS={origin}"
+            )        
+            
+        # Get the raw data
+        rawTS = time_series_element.find("rawTS")
+        if rawTS is None or not rawTS.text:
+            return 0.0
+            
+        # Parse raw values
+        raw = rawTS.text.strip().split(",")
+        raw_values = [float(i) for i in raw]
+        
+        if not raw_values:
+            return 0.0
+            
+        # Calculate average for default/fallback
+        average_value = sum(raw_values) / len(raw_values)
+        
+        # If no target date provided, return the average
+        if target_date is None:
+            return average_value
+            
+        try:
+            # Calculate end year
+            total_years = len(raw_values) / data_per_year
+            end_year = start_year + total_years
+            
+            # Get target year
+            target_year = target_date.year
+            
+            # Check if date is within range
+            if target_year < start_year or target_year >= end_year:
+                return average_value
+                
+            # Calculate index
+            years_offset = target_year - start_year
+            index = int(years_offset * data_per_year + 0.0000001)  # Avoid floating point issues
+            
+            # For multiple data points per year, adjust index based on date position in year
+            if data_per_year > 1:
+                start_of_year = datetime(target_year, 1, 1)
+                if isinstance(target_date, datetime):
+                    year_fraction = (target_date - start_of_year).total_seconds() / (365.25 * 24 * 3600)
+                else:  # Assume it's a date
+                    year_fraction = (target_date - start_of_year.date()).days / 365.25
+                    
+                index += int(year_fraction * data_per_year + 0.0000001)  # Avoid floating point issues
+            
+            # Ensure index is within bounds
+            index = min(max(0, index), len(raw_values) - 1)
+            
+            return raw_values[index]
+            
+        except (ValueError, TypeError, AttributeError):
+            # If any calculation fails, return the average
+            return average_value        
 
     def apply_location_xml(self, xml_content: str) -> None:
         """
@@ -360,30 +428,44 @@ class Simulation:
                     self.update_time_series(forestProdIx, new_forestProdIx)
 
                 location_soil = location_root.find("LocnSoil")
-                initFracDpma = float(location_soil.get("initFracDpma"))
-                initFracRpma = float(location_soil.get("initFracRpma"))
-                initFracHums = float(location_soil.get("initFracHums"))
-                initFracInrt = float(location_soil.get("initFracInrt"))
-                initFracBiof = float(location_soil.get("initFracBiof"))
-                initFracBios = float(location_soil.get("initFracBios"))
-                initTotalC = float(location_soil.get("initTotalC"))
-                soilCoverA = float(location_soil.get("soilCoverA"))
 
-                init_soil_f = doc_root.find("Init/InitSoilF")
-                init_soil_f.set("dpmaCMInitF", str(initTotalC * initFracDpma))
-                init_soil_f.set("rpmaCMInitF", str(initTotalC * initFracRpma))
-                init_soil_f.set("humsCMInitF", str(initTotalC * initFracHums))
-                init_soil_f.set("inrtCMInitF", str(initTotalC * initFracInrt))
-                init_soil_f.set("biofCMInitF", str(initTotalC * initFracBiof))
-                init_soil_f.set("biosCMInitF", str(initTotalC * initFracBios))
+                if location_soil is not None:
 
-                init_soil_a = doc_root.find("Init/InitSoilA")
-                init_soil_a.set("dpmaCMInitA", str(0.0))
-                init_soil_a.set("rpmaCMInitA", str(0.0))
-                init_soil_a.set("humsCMInitA", str(0.0))
-                init_soil_a.set("inrtCMInitA", str(0.0))
-                init_soil_a.set("biofCMInitA", str(0.0))
-                init_soil_a.set("biosCMInitA", str(0.0))
+                    TSMDInitF = 0.0
+                    initTSMD = location_soil.find("TimeSeries[@tInTS='initTSMD']")
+                    if initTSMD is not None:
+                        TSMDInitF = self.get_time_series_value(initTSMD, self.timing.start_date)
+
+                    initFracDpma = float(location_soil.get("initFracDpma"))
+                    initFracRpma = float(location_soil.get("initFracRpma"))
+                    initFracHums = float(location_soil.get("initFracHums"))
+                    initFracInrt = float(location_soil.get("initFracInrt"))
+                    initFracBiof = float(location_soil.get("initFracBiof"))
+                    initFracBios = float(location_soil.get("initFracBios"))
+                    initTotalC = float(location_soil.get("initTotalC"))
+
+                    # not sure what this is for
+                    # maybe set TimeSeries tInTS="soilCover" ??
+                    soilCoverA = float(location_soil.get("soilCoverA"))
+
+                    init_soil_f = doc_root.find("Init/InitSoilF")
+                    init_soil_f.set("dpmaCMInitF", str(initTotalC * initFracDpma))
+                    init_soil_f.set("rpmaCMInitF", str(initTotalC * initFracRpma))
+                    init_soil_f.set("humsCMInitF", str(initTotalC * initFracHums))
+                    init_soil_f.set("inrtCMInitF", str(initTotalC * initFracInrt))
+                    init_soil_f.set("biofCMInitF", str(initTotalC * initFracBiof))
+                    init_soil_f.set("biosCMInitF", str(initTotalC * initFracBios))
+                    init_soil_f.set("TSMDInitF", str(TSMDInitF))
+
+                    init_soil_a = doc_root.find("Init/InitSoilA")
+                    init_soil_a.set("dpmaCMInitA", str(0.0))
+                    init_soil_a.set("rpmaCMInitA", str(0.0))
+                    init_soil_a.set("humsCMInitA", str(0.0))
+                    init_soil_a.set("inrtCMInitA", str(0.0))
+                    init_soil_a.set("biofCMInitA", str(0.0))
+                    init_soil_a.set("biosCMInitA", str(0.0))
+                    init_soil_a.set("TSMDInitA", "")
+
 
                 forest_species_list = []
                 forest_species = location_root.find("ItemList[@id='FrSpecies']")

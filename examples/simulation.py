@@ -90,10 +90,12 @@ if __name__ == "__main__":
 
         simulation.save_to_plo(f"examples/{layer}.plo")
 
+        break
+
         # Update the site data and get the species
 
         # Add the Plant Event
 
         # Run the simulation
-        results = simulation.run()
-        simulation.save_csv(f"examples/{layer}.csv")
+        #results = simulation.run()
+        #simulation.save_csv(f"examples/{layer}.csv")
