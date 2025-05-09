@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import pyarrow as pa
 import requests
 from pyarrow import csv
+import stamina
 
 from fullcam_client.exceptions import FullCAMAPIError
 from fullcam_client.simulation import Simulation
@@ -43,6 +44,17 @@ class Template:
     name: str
     notes: str = ""
 
+@stamina.retry(on=requests.RequestException)
+def _request_get(url: str, headers: dict) -> requests.Response:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        return response
+
+@stamina.retry(on=requests.RequestException)
+def _request_post(url: str, headers: dict, files: dict) -> requests.Response:
+    response = requests.post(url, headers=headers, files=files)
+    response.raise_for_status()
+    return response
 
 class FullCAMClient:
     """
@@ -112,7 +124,7 @@ class FullCAMClient:
         # Make the API request
         logger.info("Sending request to FullCAM Plot API")
         try:
-            response = requests.post(plot_sim_url, headers=headers, files=files)
+            response = _request_post(plot_sim_url, headers=headers, files=files)
 
             # Check for successful response
             if response.status_code != 200:
@@ -151,7 +163,7 @@ class FullCAMClient:
         templates_url = f"{self.api_url}/data/v1/2020/data-builder/templates?version=2020"
         logger.info("Fetching available templates from the FullCAM API")
         try:
-            response = requests.get(templates_url, headers=headers)
+            response = _request_get(templates_url, headers=headers)
 
             # Check for successful response
             if response.status_code != 200:
@@ -229,7 +241,7 @@ class FullCAMClient:
         )
         logger.info("Fetching template from the FullCAM API")
         try:
-            response = requests.get(templates_url, headers=headers)
+            response = _request_get(templates_url, headers=headers)
 
             # Check for successful response
             if response.status_code != 200:
@@ -281,7 +293,7 @@ class FullCAMClient:
         templates_url = f"{self.api_url}/data/v1/2020/data-builder/siteinfo?latitude={latitude}&longitude={longitude}&area={area}&plotT={plot_type}&frCat={forest_category}&incGrowth={include_growth}"
         logger.info("Fetching site info from the FullCAM API")
         try:
-            response = requests.get(templates_url, headers=headers)
+            response = _request_get(templates_url, headers=headers)
 
             # Check for successful response
             if response.status_code != 200:
@@ -352,7 +364,7 @@ class FullCAMClient:
         templates_url = f"{self.api_url}/data/v1/2020/data-builder/species?latitude={latitude}&longitude={longitude}&area={area}&frCat={forest_category}&specId={species_id}"
         logger.info("Fetching species info from the FullCAM API")
         try:
-            response = requests.get(templates_url, headers=headers)
+            response = _request_get(templates_url, headers=headers)
 
             # Check for successful response
             if response.status_code != 200:

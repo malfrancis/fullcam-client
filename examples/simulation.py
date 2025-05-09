@@ -35,8 +35,18 @@ if __name__ == "__main__":
     client = FullCAMClient(version="2020")
     template = "ERF\\Environmental Plantings Method.plo"
 
-    gdf = gpd.read_file("examples/BelokaCEAsMerged.geojson")
+    #sim_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Manual Stratification to reduce CVs"
+    sim_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Auto Stratification"
+    model_points_method = "representative_point"  # centroid or "representative_point"
+
+    gdf = gpd.read_file(f"{sim_path}\\BelokaCEAsMerged.geojson")
     gdf["centroid"] = gdf.geometry.centroid
+
+    model_points = gdf.geometry.centroid
+    model_points.to_file(f"{sim_path}\\BelokaCEAsMerged_model_points.geojson", driver="GeoJSON")
+
+    representative_points = gdf.geometry.representative_point()
+    representative_points.to_file(f"{sim_path}\\BelokaCEAsMerged_representative_points.geojson", driver="GeoJSON")
 
     projected_gdf = gdf.to_crs(epsg=3577)  # Australian Albers Equal Area
     projected_gdf["centroid"] = projected_gdf.geometry.centroid
@@ -44,7 +54,10 @@ if __name__ == "__main__":
     
     all_results = []
     for i in range(len(gdf)):
-        centroid = gdf.at[i, "geometry"].centroid
+        if model_points_method == "centroid":
+            model_point = gdf.at[i, "geometry"].centroid
+        else:
+            model_point = gdf.at[i, "geometry"].representative_point()
         area = projected_gdf.at[i, "area_ha_albers"]
 
         plant_date = gdf.at[i, "Plant Date"]
@@ -57,7 +70,8 @@ if __name__ == "__main__":
             "layer": layer,
             "area": area,
             "plant_date": plant_date.strftime("%Y-%m-%d"),
-            "centroid": {"latitude": centroid.y, "longitude": centroid.x},
+            "model_point": {"latitude": model_point.y, "longitude": model_point.x},
+            "model_points_method": model_points_method,
             "configuration": config,
             "properties": convert_for_json(gdf.iloc[i].drop("geometry").to_dict()),
         }
@@ -66,10 +80,9 @@ if __name__ == "__main__":
         simulation.timing.use_daily_timing = False
         simulation.timing.start_date = plant_date
         simulation.timing.end_date = plant_date + pd.DateOffset(years=25)
-        simulation.build.latitude = centroid.y
-        simulation.build.longitude = centroid.x
+        simulation.build.latitude = model_point.y
+        simulation.build.longitude = model_point.x
         simulation.build.forest_category = "ERF"
-        #simulation.download_location_data()
 
         xml = client.get_location_xml(
             simulation.build.latitude,
@@ -97,13 +110,14 @@ if __name__ == "__main__":
 
         simulation.apply_species_xml(spec_xml, env_planting["id"], "Plant trees: Mixed species environmental planting on land managed for environmental services", plant_date)
 
-        simulation.save_to_plo(f"examples/{layer}.plo")
+        simulation.save_to_plo(f"{sim_path}/{layer}.plo")
         
         # Run the simulation
         results = simulation.run()
         #simulation.save_csv(f"examples/{layer}.csv")
         df = simulation.to_dataframe()
         df["layer"] = layer
+        df["area_ha"] = area
         all_results.append(df)
 
         
@@ -112,5 +126,5 @@ if __name__ == "__main__":
 
     # Now you can work with the combined DataFrame
     print(f"Combined results: {len(combined_df)} rows")
-    combined_df.to_csv("examples/all_results.csv", index=False)
-    combined_df.to_parquet("examples/all_results.parquet", index=False)
+    combined_df.to_csv(f"{sim_path}\\all_results.csv", index=False)
+    combined_df.to_parquet(f"{sim_path}/all_results.parquet", index=False)
