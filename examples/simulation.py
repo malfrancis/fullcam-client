@@ -157,20 +157,38 @@ if __name__ == "__main__":
 
     #sim_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Beloka_base"
     #property_file = "Beloka_ceas_area_remain_base"
+    #sim_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Beloka_worst"
+    #property_file = "Beloka_ceas_area_remain_worst"
 
-    sim_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Beloka_worst"
-    property_file = "Beloka_ceas_area_remain_worst"
 
+    #Best Cases (Beloka and Kalimna): Plot location is the centroid
+    #Base Case (Kalimna): Plot location as we did yesterday
+    #Planting date is always 1 September and the respective year (2025 or 2026)
+
+    #file_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Kalimna_13May_2025\\Scenario_Base_2025_planting\\Shapefiles\\Kalimna_ceas_area_remain_base_thisyear.geojson"
+    #file_path =  "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Kalimna_13May_2025\\Scenario_Base_2026_planting\\Shapefiles\\Kalimna_ceas_area_remain_base_nextyear.geojson"
+    #file_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Kalimna_13May_2025\\Scenario_Best_2025_planting\\Shapefiles\\Kalimna_ceas_area_remain_best_thisyear.geojson"
+    #file_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Kalimna_13May_2025\\Scenario_Best_2026_planting\\Shapefiles\\Kalimna_ceas_area_remain_best_nextyear.geojson"
+
+    file_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Beloka_13May_2025\\Scenario_Best\\Shapefiles\\Beloka_ceas_area_remain_best_2.geojson"
+
+
+    sim_path = file_path.split("\\Shapefiles")[0]
+    property_file = file_path.split("\\Shapefiles\\")[-1].split(".")[0]
 
     layer_property = "CEA"
     model_points_method = "from_stats"  # or centroid or representative_point
 
-    gdf = gpd.read_file(f"{sim_path}\\{property_file}.geojson")
+    if property_file.find("_best_") > 0:
+        model_points_method = "centroid"
+    elif property_file.find("_base_") > 0:
+        model_points_method = "from_stats"
 
+    gdf = gpd.read_file(f"{sim_path}\\Shapefiles\\{property_file}.geojson")
 
-    model_points_filename=f"{sim_path}\\{property_file}_representative_points.geojson"
+    model_points_filename=f"{sim_path}\\FullCAM_ModelPoints\\{property_file}_representative_points.geojson"
     if model_points_method == "from_stats":
-        model_points_df = calculate_model_points(f"{sim_path}\\output_stats.csv")
+        model_points_df = calculate_model_points(f"{sim_path}\\FullCAM_ModelPoints\\output_stats.csv")
         model_points_gdf = create_geojson(model_points_df, output_filename=model_points_filename)
         gdf = pd.merge(gdf, model_points_df, on=layer_property, how='left')
     elif model_points_method == "centroid":
@@ -204,6 +222,9 @@ if __name__ == "__main__":
 
         if "Plant Date" in gdf.columns:
             plant_date = gdf.at[i, "Plant Date"]
+        elif "Plant" in gdf.columns:
+            year = int(gdf.at[i, "Plant"])
+            plant_date = pd.Timestamp(f"{year}-09-01")
         else:
             plant_date = pd.Timestamp("2025-09-01")
             
@@ -261,11 +282,11 @@ if __name__ == "__main__":
 
         simulation.apply_species_xml(spec_xml, env_planting["id"], "Plant trees: Mixed species environmental planting on land managed for environmental services", plant_date)
 
-        simulation.save_to_plo(f"{sim_path}/{layer}.plo")
+        simulation.save_to_plo(f"{sim_path}/FullCAM_Plotfiles/{layer}.plo")
         
         # Run the simulation
         results = simulation.run()
-        simulation.save_csv(f"{sim_path}/{layer}.csv")
+        simulation.save_csv(f"{sim_path}/FullCAM_Ouput/{layer}.csv")
         df = simulation.to_dataframe()
         df["layer"] = layer
         df["area_ha"] = area
@@ -277,8 +298,8 @@ if __name__ == "__main__":
 
     # Now you can work with the combined DataFrame
     print(f"Combined results: {len(combined_df)} rows")
-    combined_df.to_csv(f"{sim_path}\\all_results.csv", index=False)
+    combined_df.to_csv(f"{sim_path}/FullCAM_Ouput/all_results.csv", index=False)
+    combined_df.to_parquet(f"{sim_path}/FullCAM_Ouput/all_results.parquet", index=False)
     #accus=('C mass of trees  (tC/ha)'+'C mass of forest debris  (tC/ha)')*'area_ha'*44/12*0.95
-    combined_df['accus'] = (combined_df['C mass of trees  (tC/ha)'] + combined_df['C mass of forest debris  (tC/ha)']) * combined_df['area_ha'] * 44 / 12 * 0.95
-    combined_df.to_csv(f"{sim_path}\\all_results_accus.csv", index=False)
-    combined_df.to_parquet(f"{sim_path}/all_results.parquet", index=False)
+    #combined_df['accus'] = (combined_df['C mass of trees  (tC/ha)'] + combined_df['C mass of forest debris  (tC/ha)']) * combined_df['area_ha'] * 44 / 12 * 0.95
+    #combined_df.to_csv(f"{sim_path}\\all_results_accus.csv", index=False)
