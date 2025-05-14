@@ -44,17 +44,20 @@ class Template:
     name: str
     notes: str = ""
 
+
 @stamina.retry(on=requests.RequestException)
 def _request_get(url: str, headers: dict) -> requests.Response:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        return response
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    return response
+
 
 @stamina.retry(on=requests.RequestException)
 def _request_post(url: str, headers: dict, files: dict) -> requests.Response:
     response = requests.post(url, headers=headers, files=files)
     response.raise_for_status()
     return response
+
 
 class FullCAMClient:
     """
@@ -359,7 +362,6 @@ class FullCAMClient:
         species_id: int = 0,
         version: int = 2020,
     ) -> str:
-
         headers = {"Ocp-Apim-Subscription-Key": self.subscription_key}
         templates_url = f"{self.api_url}/data/v1/2020/data-builder/species?latitude={latitude}&longitude={longitude}&area={area}&frCat={forest_category}&specId={species_id}"
         logger.info("Fetching species info from the FullCAM API")
@@ -400,4 +402,3 @@ class FullCAMClient:
         except ET.ParseError as e:
             logger.error(f"XML parse error: {str(e)}")
             raise FullCAMAPIError(f"Failed to parse XML response: {str(e)}") from e
-

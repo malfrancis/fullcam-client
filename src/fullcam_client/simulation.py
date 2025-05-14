@@ -304,11 +304,8 @@ class Simulation:
         except Exception as e:
             logger.error(f"Failed to update time series data: {str(e)}")
             raise FullCAMClientError(f"Failed to update time series data: {str(e)}") from e
-        
-
 
     def get_time_series_value(self, time_series_element, target_date=None):
-
         input_id = time_series_element.get("tInTS")
         extrap_type = time_series_element.get("tExtrapTS")
         origin = time_series_element.get("tOriginTS")
@@ -317,61 +314,65 @@ class Simulation:
         if extrap_type != "AvgYr" or data_per_year != 1 or origin != "Calendar":
             raise ValueError(
                 f"Unsupported TimeSeries ({input_id}) attributes: tExtrapTS={extrap_type}, dataPerYrTS={data_per_year}, tOriginTS={origin}"
-            )        
-            
+            )
+
         # Get the raw data
         rawTS = time_series_element.find("rawTS")
         if rawTS is None or not rawTS.text:
             return 0.0
-            
+
         # Parse raw values
         raw = rawTS.text.strip().split(",")
         raw_values = [float(i) for i in raw]
-        
+
         if not raw_values:
             return 0.0
-            
+
         # Calculate average for default/fallback
         average_value = sum(raw_values) / len(raw_values)
-        
+
         # If no target date provided, return the average
         if target_date is None:
             return average_value
-            
+
         try:
             # Calculate end year
             total_years = len(raw_values) / data_per_year
             end_year = start_year + total_years
-            
+
             # Get target year
             target_year = target_date.year
-            
+
             # Check if date is within range
             if target_year < start_year or target_year >= end_year:
                 return average_value
-                
+
             # Calculate index
             years_offset = target_year - start_year
             index = int(years_offset * data_per_year + 0.0000001)  # Avoid floating point issues
-            
+
             # For multiple data points per year, adjust index based on date position in year
             if data_per_year > 1:
                 start_of_year = datetime(target_year, 1, 1)
                 if isinstance(target_date, datetime):
-                    year_fraction = (target_date - start_of_year).total_seconds() / (365.25 * 24 * 3600)
+                    year_fraction = (target_date - start_of_year).total_seconds() / (
+                        365.25 * 24 * 3600
+                    )
                 else:  # Assume it's a date
                     year_fraction = (target_date - start_of_year.date()).days / 365.25
-                    
-                index += int(year_fraction * data_per_year + 0.0000001)  # Avoid floating point issues
-            
+
+                index += int(
+                    year_fraction * data_per_year + 0.0000001
+                )  # Avoid floating point issues
+
             # Ensure index is within bounds
             index = min(max(0, index), len(raw_values) - 1)
-            
+
             return raw_values[index]
-            
+
         except (ValueError, TypeError, AttributeError):
             # If any calculation fails, return the average
-            return average_value        
+            return average_value
 
     def apply_location_xml(self, xml_content: str) -> None:
         """
@@ -440,7 +441,6 @@ class Simulation:
                 location_soil = location_root.find("LocnSoil")
 
                 if location_soil is not None:
-
                     TSMDInitF = 0.0
                     initTSMD = location_soil.find("TimeSeries[@tInTS='initTSMD']")
                     if initTSMD is not None:
@@ -476,18 +476,14 @@ class Simulation:
                     init_soil_a.set("biosCMInitA", str(0.0))
                     init_soil_a.set("TSMDInitA", "")
 
-
                 forest_species_list = []
                 forest_species = location_root.find("ItemList[@id='FrSpecies']")
                 for item in forest_species:
-                    spec={
+                    spec = {
                         "id": item.get("id"),
                         "name": item.get("value"),
                     }
                     forest_species_list.append(spec)
-
-                
-
 
             logger.info(f"Applied location XML content to simulation '{self.name}'")
 
@@ -527,7 +523,7 @@ class Simulation:
 
             for event in new_species_element.findall("EventQ/Event"):
                 event.set("idSP", str(spec_id))
-            
+
             for tyf_params in new_species_element.findall("Growth/TYFParameters"):
                 tyf_params.set("idSP", str(spec_id))
 
@@ -548,12 +544,13 @@ class Simulation:
                 new_event.set("nDaysFromStEV", "0")
                 dateEV = Element("dateEV", {"CalendarSystemT": "FixedLength"})
                 dateEV.text = plant_date.strftime("%Y%m%d")
-                #new_event.append(dateEV)
+                # new_event.append(dateEV)
                 eventQ.insert(0, new_event)
                 new_event.insert(1, dateEV)
-            
 
-            logger.info(f"Applied species XML content to simulation '{self.name}' for species ID '{species_id}'")
+            logger.info(
+                f"Applied species XML content to simulation '{self.name}' for species ID '{species_id}'"
+            )
         except Exception as e:
             logger.error(f"Failed to apply species XML: {str(e)}")
             raise FullCAMClientError(f"Failed to apply species XML: {str(e)}") from e
@@ -630,7 +627,12 @@ class Simulation:
                 )
 
             ET.indent(self.tree)
-            self.tree.write(file_path, encoding="utf-8", xml_declaration=True, method="xml",)
+            self.tree.write(
+                file_path,
+                encoding="utf-8",
+                xml_declaration=True,
+                method="xml",
+            )
 
             # Update plot_file attribute
             self.plot_file = file_path
