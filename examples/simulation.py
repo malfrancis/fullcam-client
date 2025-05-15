@@ -182,13 +182,13 @@ if __name__ == "__main__":
     # file_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Kalimna_13May_2025\\Scenario_Best_2025_planting\\Shapefiles\\Kalimna_ceas_area_remain_best_thisyear.geojson"
     # file_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Kalimna_13May_2025\\Scenario_Best_2026_planting\\Shapefiles\\Kalimna_ceas_area_remain_best_nextyear.geojson"
 
-    file_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Beloka_13May_2025\\Scenario_Best\\Shapefiles\\Beloka_ceas_area_remain_best_2.geojson"
+    file_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Shapefiles\\BelokaCEAsMerged_XY.geojson"
 
     sim_path = file_path.split("\\Shapefiles")[0]
     property_file = file_path.split("\\Shapefiles\\")[-1].split(".")[0]
 
     layer_property = "CEA"
-    model_points_method = "from_stats"  # or centroid or visual_center
+    model_points_method = "visual_center"  # from_stats or centroid or visual_center
 
     if property_file.find("_best_") > 0:
         model_points_method = "centroid"
@@ -290,14 +290,7 @@ if __name__ == "__main__":
         simulation.build.latitude = center_y
         simulation.build.longitude = center_x
         simulation.build.forest_category = "ERF"
-
-        xml = client.get_location_xml(
-            simulation.build.latitude,
-            simulation.build.longitude,
-            forest_category=simulation.build.forest_category,
-        )
-
-        species_list = simulation.apply_location_xml(xml)
+        species_list = simulation.get_location_info()
 
         # find "Mixed species environmental planting" in the species list
         species = [

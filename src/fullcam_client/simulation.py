@@ -30,7 +30,6 @@ logging.basicConfig(
 logger = logging.getLogger("fullcam_client.simulation")
 
 
-@dataclass
 class Build(BaseModel):
     latitude: float = 0.0
     longitude: float = 0.0
@@ -69,30 +68,57 @@ class Build(BaseModel):
         else:
             super().__setattr__(name, value)
 
-@dataclass
-class Timing:
-    def __init__(self, timing: Element):
-        self.use_daily_timing = timing.get("dailyTimingTZ") == "true"
-        if self.use_daily_timing:
-            start_date_el = timing.find("stDateTM")
-            end_date_el = timing.find("enDateTM")
-            if start_date_el is not None:
-                self.start_date = datetime.strptime(start_date_el.text, "%Y%m%d").date()
-            if end_date_el is not None:
-                self.end_date = datetime.strptime(end_date_el.text, "%Y%m%d").date()
-        else:
-            start_year = int(timing.get("stYrYTZ", "0"))
-            start_step = int(timing.get("stStepInStYrYTZ", "0"))
-            end_year = int(timing.get("enYrYTZ", "0"))
-            end_step = int(timing.get("enStepInEnYrYTZ", "0"))
-            self.start_date = datetime(start_year, 1, 1) + pd.DateOffset(months=start_step - 1)
-            self.end_date = datetime(end_year, 1, 1) + pd.DateOffset(months=end_step - 1)
-
+class Timing(BaseModel):
     start_date: datetime | None = None
     end_date: datetime | None = None
+    use_daily_timing: bool = False
 
+    def __init__(self, timing = None, **data):
+        if timing is not None:
+            use_daily_timing = str(timing.get("dailyTimingTZ")).lower() == "true"
+            data["use_daily_timing"] = use_daily_timing
+            if use_daily_timing:
+                start_date_el = timing.find("stDateTM")
+                end_date_el = timing.find("enDateTM")
+                if start_date_el is not None:
+                    data["start_date"] = datetime.strptime(start_date_el.text, "%Y%m%d").date()
+                if end_date_el is not None:
+                    data["end_date"] = datetime.strptime(end_date_el.text, "%Y%m%d").date()
+            else:
+                start_year = int(timing.get("stYrYTZ", "0"))
+                start_step = int(timing.get("stStepInStYrYTZ", "0"))
+                end_year = int(timing.get("enYrYTZ", "0"))
+                end_step = int(timing.get("enStepInEnYrYTZ", "0"))
+                data["start_date"] = datetime(start_year, 1, 1) + pd.DateOffset(months=start_step - 1)
+                data["end_date"] = datetime(end_year, 1, 1) + pd.DateOffset(months=end_step - 1)
+        super().__init__(**data)
+    
+    def model_post_init(self, __context):
+        """Hook called after the model is fully initialized"""
+        # Store original values for change detection
+        self._original_values = dict(self)
 
-@dataclass
+    def __setattr__(self, name, value):
+        """Override setattr to detect property changes"""
+        if name in self.model_fields_set:
+            old_value = getattr(self, name) if hasattr(self, name) else None
+            
+            # Only emit signal if the value is actually changing
+            if old_value != value:
+                # Set the new value
+                super().__setattr__(name, value)
+                
+                # Emit the signal
+                timing_changed = signal('timing_changed')
+                timing_changed.send(self, 
+                                  field_name=name, 
+                                  old_value=old_value, 
+                                  new_value=value)
+            else:
+                super().__setattr__(name, value)
+        else:
+            super().__setattr__(name, value)
+
 class About(BaseModel):
     name: str = ""
     notes: str | None = None
@@ -198,8 +224,60 @@ class Simulation:
         self.build = Build(root.find("Build"))
 
         # Connect signals to handlers
-        signal('build_changed').connect(self._on_build_changed)      
         signal('about_changed').connect(self._on_about_changed)  
+        signal('timing_changed').connect(self._on_timing_changed)      
+        signal('build_changed').connect(self._on_build_changed)      
+
+    def _on_timing_changed(self, sender, field_name, old_value, new_value):
+        """Handler for timing property changes"""
+        logger.info(f"Timing property '{field_name}' changed from {old_value} to {new_value}")
+        
+        # Update XML tree
+        root = self.tree.getroot()
+        timing_el = root.find("Timing")
+        
+        if timing_el is not None:
+            if field_name == "start_date":
+                if self.timing.use_daily_timing:
+                    start_date_el = timing_el.find("stDateTM")
+                    start_date_el.text = new_value.strftime("%Y%m%d")
+                else:
+                    timing_el.set("stYrYTZ", str(new_value.year))
+                    timing_el.set("stStepInStYrYTZ", str(new_value.month))
+
+            elif field_name == "end_date":
+                if self.timing.use_daily_timing:
+                    end_date_el = timing_el.find("enDateTM")
+                    end_date_el.text = new_value.strftime("%Y%m%d")
+                else:
+                    timing_el.set("enYrYTZ", str(new_value.year))
+                    timing_el.set("enStepInEnYrYTZ", str(new_value.month))
+
+            elif field_name == "use_daily_timing":
+                timing_el.set("dailyTimingTZ", str(new_value).lower())
+                if new_value: # daily timing
+                    start_date_el = ET.SubElement(timing_el, "stDateTM")
+                    start_date_el = ET.SubElement(timing_el, "enDateTM")
+                    if self.timing.start_date:
+                        start_date_el.text = self.timing.start_date.strftime("%Y%m%d")
+                    if self.timing.end_date:
+                        end_date_el.text = self.timing.end_date.strftime("%Y%m%d")
+                else: # step timing
+                    start_year = self.timing.start_date.year
+                    start_step = self.timing.start_date.month
+                    end_year = self.timing.end_date.year
+                    end_step = self.timing.end_date.month
+
+                    timing_el.set("stYrYTZ", str(start_year))
+                    timing_el.set("stStepInStYrYTZ", str(start_step))
+                    timing_el.set("enYrYTZ", str(end_year))
+                    timing_el.set("enStepInEnYrYTZ", str(end_step))
+                    start_date_el = timing_el.find("stDateTM")
+                    end_date_el = timing_el.find("enDateTM")
+                    if start_date_el is not None:
+                        timing_el.remove(start_date_el)
+                    if end_date_el is not None:
+                        timing_el.remove(end_date_el)
 
     def _on_build_changed(self, sender, field_name, old_value, new_value):
         """Handler for build property changes"""
@@ -461,6 +539,21 @@ class Simulation:
             # If any calculation fails, return the average
             return average_value
 
+    def get_location_info(self, apply_queried_data: bool = True) -> None:
+        xml = self.client.get_location_xml(
+            self.build.latitude,
+            self.build.longitude,
+            forest_category=self.build.forest_category,
+        )
+        if xml is None:
+            raise FullCAMClientError(
+                f"Failed to get location XML for latitude {self.build.latitude} and longitude {self.build.longitude}"
+            )
+        self.location_xml = xml
+        if apply_queried_data:
+            return self.apply_location_xml(xml)
+        return None
+
     def apply_location_xml(self, xml_content: str) -> None:
         """
         Apply location XML content to the simulation.
@@ -660,6 +753,7 @@ class Simulation:
 
             # set the page to the about tab
             root.set("pageIxDO", "0")
+            """
             meta = root.find("Meta")
             if meta is not None:
                 meta.set("nmME", self.about.name)
@@ -712,7 +806,7 @@ class Simulation:
                 logger.warning(
                     "Build element not found in XML. Skipping latitude and longitude update."
                 )
-
+            """
             ET.indent(self.tree)
             self.tree.write(
                 file_path,
