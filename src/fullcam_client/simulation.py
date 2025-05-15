@@ -14,6 +14,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from xml.etree.ElementTree import Element
 
+from pydantic import BaseModel, Field
+from blinker import signal
+
 import pandas as pd
 import pyarrow as pa
 from pyarrow import csv
@@ -28,29 +31,47 @@ logger = logging.getLogger("fullcam_client.simulation")
 
 
 @dataclass
-class Build:
-    def __init__(self, build: Element):
-        self.latitude = build.get("latBL")
-        self.longitude = build.get("lonBL")
-        self.forest_category = build.get("frCat")
-
+class Build(BaseModel):
     latitude: float = 0.0
     longitude: float = 0.0
     forest_category: str = ""  # Forest category (e.g., "ERF", "NPP", etc.)
+    
+    def __init__(self, build=None, **data):
+        if build is not None:
+            data["latitude"] = float(build.get("latBL", 0.0))
+            data["longitude"] = float(build.get("lonBL", 0.0))
+            data["forest_category"] = build.get("frCat", "")
+        super().__init__(**data)
 
+    def model_post_init(self, __context):
+        """Hook called after the model is fully initialized"""
+        # Store original values for change detection
+        self._original_values = dict(self)
+    
+    def __setattr__(self, name, value):
+        """Override setattr to detect property changes"""
+        if name in self.model_fields_set:
+            old_value = getattr(self, name) if hasattr(self, name) else None
+            
+            # Only emit signal if the value is actually changing
+            if old_value != value:
+                # Set the new value
+                super().__setattr__(name, value)
+                
+                # Emit the signal
+                build_changed = signal('build_changed')
+                build_changed.send(self, 
+                                  field_name=name, 
+                                  old_value=old_value, 
+                                  new_value=value)
+            else:
+                super().__setattr__(name, value)
+        else:
+            super().__setattr__(name, value)
 
 @dataclass
 class Timing:
     def __init__(self, timing: Element):
-        """
-        <Timing dailyTimingTZ="true" useDaysPerStepDTZ="true" daysPerStepDTZ="1" stepsPerDayDTZ="1" outputFreqDTZ="Monthly" stepsPerOutDTZ="1" firstOutStepDTZ="1" tStepsYTZ="Monthly" stepsPerYrYTZ="110" stYrYTZ="" stStepInStYrYTZ="" enYrYTZ="" enStepInEnYrYTZ="" stepsPerOutYTZ="1" firstOutStepYTZ="1">
-            <stDateTM CalendarSystemT="Gregorian">20100101</stDateTM>
-            <enDateTM CalendarSystemT="Gregorian">21100101</enDateTM>
-        </Timing>
-
-        <Timing dailyTimingTZ="false" useDaysPerStepDTZ="true" daysPerStepDTZ="1" stepsPerDayDTZ="1" outputFreqDTZ="Daily" stepsPerOutDTZ="1" firstOutStepDTZ="1" tStepsYTZ="Monthly" stepsPerYrYTZ="110" stYrYTZ="2025" stStepInStYrYTZ="8" enYrYTZ="2050" enStepInEnYrYTZ="8" stepsPerOutYTZ="1" firstOutStepYTZ="1"/>
-
-        """
         self.use_daily_timing = timing.get("dailyTimingTZ") == "true"
         if self.use_daily_timing:
             start_date_el = timing.find("stDateTM")
@@ -72,19 +93,46 @@ class Timing:
 
 
 @dataclass
-class About:
-    def __init__(self, meta: Element):
-        self.name = meta.get("nmME")
-        notes_el = meta.find("notesME")
-        if notes_el is not None:
-            self.notes = notes_el.text
-        else:
-            self.notes = None
-        self.version = meta.get("savedByVersion")
-
+class About(BaseModel):
     name: str = ""
     notes: str | None = None
     version: str = ""
+
+    def __init__(self, meta = None, **data):
+        if meta is not None:
+            data["name"] = meta.get("nmME")
+            data["notes"] = meta.get("notesME")
+            data["version"] = meta.get("savedByVersion")
+        super().__init__(**data)
+
+    def model_post_init(self, __context):
+        """Hook called after the model is fully initialized"""
+        # Store original values for change detection
+        self._original_values = dict(self)
+    
+    def __setattr__(self, name, value):
+        """Override setattr to detect property changes"""
+        if name in self.model_fields_set:
+            old_value = getattr(self, name) if hasattr(self, name) else None
+            
+            # Only emit signal if the value is actually changing
+            if old_value != value:
+                # Set the new value
+                super().__setattr__(name, value)
+                
+                # Emit the signal
+                about_changed = signal('about_changed')
+                about_changed.send(self, 
+                                  field_name=name, 
+                                  old_value=old_value, 
+                                  new_value=value)
+            else:
+                super().__setattr__(name, value)
+        else:
+            super().__setattr__(name, value)
+
+
+
 
 
 class Simulation:
@@ -148,6 +196,45 @@ class Simulation:
         self.about = About(root.find("Meta"))
         self.timing = Timing(root.find("Timing"))
         self.build = Build(root.find("Build"))
+
+        # Connect signals to handlers
+        signal('build_changed').connect(self._on_build_changed)      
+        signal('about_changed').connect(self._on_about_changed)  
+
+    def _on_build_changed(self, sender, field_name, old_value, new_value):
+        """Handler for build property changes"""
+        logger.info(f"Build property '{field_name}' changed from {old_value} to {new_value}")
+        
+        # Update XML tree
+        root = self.tree.getroot()
+        build_el = root.find("Build")
+        
+        if build_el is not None:
+            if field_name == "latitude":
+                build_el.set("latBL", str(new_value))
+            elif field_name == "longitude":
+                build_el.set("lonBL", str(new_value))
+            elif field_name == "forest_category":
+                build_el.set("frCat", new_value)     
+
+    def _on_about_changed(self, sender, field_name, old_value, new_value):
+        """Handler for metadata property changes"""
+        logger.info(f"Metadata property '{field_name}' changed from {old_value} to {new_value}")
+        
+        # Update XML tree
+        root = self.tree.getroot()
+        meta_el = root.find("Meta")
+        
+        if meta_el is not None:
+            if field_name == "name":
+                meta_el.set("nmME", new_value)
+            elif field_name == "notes":
+                notes_el = meta_el.find("notesME")
+                if notes_el is not None:
+                    notes_el.text = new_value
+                else:
+                    logger.warning("Notes element not found in XML. Skipping notes update.")
+
 
     def load_xml(self, file_path: str) -> None:
         """
