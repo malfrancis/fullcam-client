@@ -1,16 +1,11 @@
 import json
+import re
 from datetime import date, datetime
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from shapely.geometry import Point
-import pandas as pd
-import numpy as np
-import json
-import re
-from shapely.geometry import Point, LineString, box
-
+from shapely.geometry import LineString, Point, box
 
 from fullcam_client import FullCAMClient
 
@@ -34,43 +29,6 @@ def convert_for_json(obj):
     elif isinstance(obj, list):
         return [convert_for_json(item) for item in obj]
     return obj
-
-
-def create_geojson(df, output_filename="cea_points.geojson"):
-    """
-    Convert the results DataFrame to a GeoJSON file using GeoPandas.
-
-    Parameters:
-    -----------
-    df : pandas.DataFrame
-        DataFrame containing center_x and center_y columns to be converted to points
-    output_filename : str
-        Filename for the output GeoJSON file
-
-    Returns:
-    --------
-    geopandas.GeoDataFrame
-        The GeoDataFrame that was written to the GeoJSON file
-    """
-    # Filter out rows with null coordinates
-    valid_df = df.dropna(subset=["center_x", "center_y"])
-
-    # Create Point geometries from longitude (center_x) and latitude (center_y)
-    # Note: GeoJSON expects coordinates in [longitude, latitude] order
-    geometries = [Point(x, y) for x, y in zip(valid_df["center_x"], valid_df["center_y"])]
-
-    # Create a GeoDataFrame
-    gdf = gpd.GeoDataFrame(
-        valid_df,
-        geometry=geometries,
-        crs="EPSG:4326",  # WGS84 coordinate system
-    )
-
-    # Write to GeoJSON
-    gdf.to_file(output_filename, driver="GeoJSON")
-    print(f"GeoJSON file created: {output_filename}")
-
-    return gdf
 
 
 # Function to parse string representations of arrays into actual lists

@@ -9,8 +9,8 @@ from dataclasses import dataclass
 
 import pyarrow as pa
 import requests
-from pyarrow import csv
 import stamina
+from pyarrow import csv
 
 from fullcam_client.exceptions import FullCAMAPIError
 from fullcam_client.simulation import Simulation

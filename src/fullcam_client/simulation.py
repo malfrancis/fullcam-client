@@ -5,18 +5,18 @@ This module provides classes for managing FullCAM plot simulations,
 comparing their results, and creating visualizations.
 """
 
+import copy
 import io
 import logging
 import os
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import datetime
 from xml.etree.ElementTree import Element
 
 import pandas as pd
 import pyarrow as pa
 from pyarrow import csv
-import copy
 
 from fullcam_client.exceptions import FullCAMClientError
 
