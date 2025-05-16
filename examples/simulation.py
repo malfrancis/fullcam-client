@@ -80,8 +80,33 @@ def calculate_model_points(output_stats):
     # Create a DataFrame with the results
     return pd.DataFrame(results)
 
+def calculate_model_pixels(output_stats):
+    df = pd.read_csv(output_stats)
+    # Process each row
+    results = []
+    for idx, row in df.iterrows():
+        # Parse the string arrays into actual arrays
+        center_x = parse_array_string(row["center_x"])
+        center_y = parse_array_string(row["center_y"])
+        frac = parse_array_string(row["frac"])
+        cea = row["CEA"]
 
-def ensure_point_in_polygon(row, cell_size=0.025):
+        for pixel_idx in range(len(frac)):
+            if frac[pixel_idx] > 0:
+                # Get the corresponding center_x and center_y
+                result = {
+                    "CEA": cea,
+                    "idx": pixel_idx+1,
+                    "center_x": center_x[pixel_idx],
+                    "center_y": center_y[pixel_idx],
+                    "frac": frac[pixel_idx],
+                }
+                results.append(result)
+
+    # Create a DataFrame with the results
+    return pd.DataFrame(results)
+
+def ensure_point_in_polygon(row, cell_size=0.0025):
     """
     Check if a point is within its polygon. If not, but its cell intersects the polygon,
     modify the point to be within the polygon using representative_point().
@@ -95,13 +120,15 @@ def ensure_point_in_polygon(row, cell_size=0.025):
 
     # Create a box (cell) around the point
     x, y = point.x, point.y
-    cell = box(x - cell_size / 2, y - cell_size / 2, x + cell_size / 2, y + cell_size / 2)
-
+    pad = cell_size / 2
+    # Create a box around the point
+    cell = box(x - pad, y - pad, x + pad, y + pad)
+    #print(f"Cell: {cell.wkt}")
     # Check if the cell intersects with the polygon
     if cell.intersects(polygon):
         # Get the intersection between the cell and the polygon
         intersection = cell.intersection(polygon)
-
+        #print(f"Intersection: {intersection.wkt}")
         # Use representative_point to get a point guaranteed to be within the intersection
         return intersection.representative_point()
 
@@ -151,51 +178,17 @@ def find_visual_center(polygon):
     # Last resort - use representative point
     return sample_poly.representative_point()
 
-
-if __name__ == "__main__":
-    # Initialize the FullCAM client
+#"C:\Development\MullionGroup\Wollemi-Demo\CEA-Stratification\_Scenarios_15May_2025_Talbot_KangarooC\KangarooCamp\Scenario_Base\Shapefiles\KangarooCamp_plantable_area_mid.geojson"
+def simulate_cea(file_path, 
+                 layer_property = "CEA", 
+                 model_points_method = "from_stats" # from_stats or centroid or visual_center
+                 ):
     client = FullCAMClient(version="2020")
     template = "ERF\\Environmental Plantings Method.plo"
-
-    # sim_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Manual Stratification to reduce CVs"
-    # sim_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Auto Stratification"
-    # property_file = "BelokaCEAsMerged"
-    # layer_property = "layer"
-
-    # sim_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Kalimna"
-    # property_file = "Kalimna_ceas_area_remain_base"
-
-    # sim_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Kalimna_worst"
-    # property_file = "Kalimna_ceas_area_remain_worst"
-
-    # sim_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Beloka_base"
-    # property_file = "Beloka_ceas_area_remain_base"
-    # sim_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Beloka_worst"
-    # property_file = "Beloka_ceas_area_remain_worst"
-
-    # Best Cases (Beloka and Kalimna): Plot location is the centroid
-    # Base Case (Kalimna): Plot location as we did yesterday
-    # Planting date is always 1 September and the respective year (2025 or 2026)
-
-    # file_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Kalimna_13May_2025\\Scenario_Base_2025_planting\\Shapefiles\\Kalimna_ceas_area_remain_base_thisyear.geojson"
-    # file_path =  "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Kalimna_13May_2025\\Scenario_Base_2026_planting\\Shapefiles\\Kalimna_ceas_area_remain_base_nextyear.geojson"
-    # file_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Kalimna_13May_2025\\Scenario_Best_2025_planting\\Shapefiles\\Kalimna_ceas_area_remain_best_thisyear.geojson"
-    # file_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Kalimna_13May_2025\\Scenario_Best_2026_planting\\Shapefiles\\Kalimna_ceas_area_remain_best_nextyear.geojson"
-
-    file_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Shapefiles\\BelokaCEAsMerged_XY.geojson"
-
     sim_path = file_path.split("\\Shapefiles")[0]
     property_file = file_path.split("\\Shapefiles\\")[-1].split(".")[0]
 
-    layer_property = "CEA"
-    model_points_method = "visual_center"  # from_stats or centroid or visual_center
-
-    if property_file.find("_best_") > 0:
-        model_points_method = "centroid"
-    elif property_file.find("_base_") > 0:
-        model_points_method = "from_stats"
-
-    gdf = gpd.read_file(f"{sim_path}\\Shapefiles\\{property_file}.geojson")
+    gdf = gpd.read_file(file_path)
 
     model_points_filename = (
         f"{sim_path}\\FullCAM_ModelPoints\\{property_file}_representative_points.geojson"
@@ -214,7 +207,7 @@ if __name__ == "__main__":
 
         # Apply the function to create adjusted points that are within their polygons
         model_points_gdf["geometry"] = model_points_gdf.apply(
-            ensure_point_in_polygon, cell_size=0.025, axis=1
+            ensure_point_in_polygon, cell_size=0.0025, axis=1
         )
 
         # Drop the temporary point geometry column
@@ -233,14 +226,16 @@ if __name__ == "__main__":
     projected_gdf["area_ha_albers"] = projected_gdf.geometry.area / 10000
 
     all_results = []
+
     for i in range(len(gdf)):
         if model_points_method == "centroid":
             model_point = gdf.at[i, "geometry"].centroid
             center_x = model_point.x
             center_y = model_point.y
         elif model_points_method == "from_stats":
-            center_x = gdf.at[i, "center_x"]
-            center_y = gdf.at[i, "center_y"]
+            cea_model_points = pd.merge(gdf, model_points_df, on=layer_property, how='left')
+            center_x = cea_model_points.at[i, "center_x"]
+            center_y = cea_model_points.at[i, "center_y"]
         elif model_points_method == "representative_point":
             model_point = gdf.at[i, "geometry"].representative_point()
             center_x = model_point.x
@@ -321,7 +316,7 @@ if __name__ == "__main__":
         simulation.save_to_plo(f"{sim_path}/FullCAM_Plotfiles/{layer}.plo")
 
         # Run the simulation
-        results = simulation.run()
+        simulation.run()
         simulation.save_csv(f"{sim_path}/FullCAM_Ouput/{layer}.csv")
         df = simulation.to_dataframe()
         df["layer"] = layer
@@ -330,11 +325,167 @@ if __name__ == "__main__":
 
     # After the loop completes, concatenate all results
     combined_df = pd.concat(all_results, ignore_index=True)
-
-    # Now you can work with the combined DataFrame
-    print(f"Combined results: {len(combined_df)} rows")
     combined_df.to_csv(f"{sim_path}/FullCAM_Ouput/all_results.csv", index=False)
     combined_df.to_parquet(f"{sim_path}/FullCAM_Ouput/all_results.parquet", index=False)
+
+    return combined_df
+
+
+def simulate_cea_from_stats(
+    file_path,
+    layer_property="CEA"
+):
+    
+    client = FullCAMClient(version="2020")
+    template = "ERF\\Environmental Plantings Method.plo"
+    sim_path = file_path.split("\\Shapefiles")[0]
+    property_file = file_path.split("\\Shapefiles\\")[-1].split(".")[0]
+
+    gdf = gpd.read_file(file_path)
+
+    model_points_filename = (
+        f"{sim_path}\\FullCAM_ModelPoints\\{property_file}_representative_points.geojson"
+    )
+
+    pixels_df = calculate_model_pixels(
+        f"{sim_path}\\FullCAM_ModelPoints\\output_stats.csv"
+    )
+
+
+    model_points_gdf = pd.merge(gdf, pixels_df, on=layer_property, how="left")
+
+    # First create points from center coordinates
+    model_points_gdf["point_geometry"] = model_points_gdf.apply(
+        lambda row: Point(row["center_x"], row["center_y"]), axis=1
+    )
+
+    # Apply the function to create adjusted points that are within their polygons
+    model_points_gdf["geometry"] = model_points_gdf.apply(
+        ensure_point_in_polygon, cell_size=0.0025, axis=1
+    )
+
+    # Drop the temporary point geometry column
+    model_points_gdf.drop(columns=["point_geometry"], inplace=True)
+    model_points_gdf.to_file(model_points_filename, driver="GeoJSON")
+
+    projected_gdf = gdf.to_crs(epsg=3577)  # Australian Albers Equal Area
+    projected_gdf["area_ha_albers"] = projected_gdf.geometry.area / 10000
+
+    all_results = []
+    for idx, row in model_points_gdf.iterrows():
+
+        center_x = row["center_x"]
+        center_y = row["center_y"]
+        plot_idx = row["idx"]
+
+        area = projected_gdf.loc[projected_gdf[layer_property] == row[layer_property], "area_ha_albers"].any()
+        area *= row["frac"] 
+
+        if "Plant Date" in gdf.columns:
+            plant_date = row["Plant Date"]
+        elif "Plant" in gdf.columns:
+            year = int(row["Plant"])
+            plant_date = pd.Timestamp(f"{year}-09-01")
+        else:
+            plant_date = pd.Timestamp("2025-09-01")
+
+        if "Configuration" in gdf.columns:
+            config = row["Configuration"]
+        else:
+            config = "EP"
+
+        layer = row[layer_property]
+
+        simulation = client.create_simulation_from_template(template, layer)
+
+        notes = {
+            "layer": layer,
+            "area": area,
+            "plant_date": plant_date.strftime("%Y-%m-%d"),
+            "model_point": {"latitude": center_y, "longitude": center_x},
+            "model_points_method": "model_pixels",
+            "configuration": config,
+            "properties": convert_for_json(row.drop("geometry").to_dict()),
+        }
+        simulation.about.name = layer
+        simulation.about.notes = json.dumps(notes)
+        simulation.timing.use_daily_timing = False
+        simulation.timing.start_date = plant_date
+        simulation.timing.end_date = plant_date + pd.DateOffset(years=25)
+        simulation.build.latitude = center_y
+        simulation.build.longitude = center_x
+        simulation.build.forest_category = "ERF"
+        simulation.download_location_info()
+
+        env_planting = next(
+            (
+                species
+                for species in simulation.location_info.forest_species
+                if "Mixed species environmental planting" in species.name
+            ),
+            None,  # Default value if not found
+        )
+        if env_planting is None:
+            print(f"No species found for {layer}")
+
+        else:
+            spec_xml = client.get_species_xml(
+                simulation.build.latitude,
+                simulation.build.longitude,
+                forest_category=simulation.build.forest_category,
+                species_id=env_planting.id,
+            )
+
+            simulation.apply_species_xml(
+                spec_xml,
+                env_planting.id,
+                "Plant trees: Mixed species environmental planting on land managed for environmental services",
+                plant_date,
+            )
+
+        file_name = f"{layer}_{plot_idx:03d}"
+        simulation.save_to_plo(f"{sim_path}/FullCAM_Plotfiles/{file_name}.plo")
+
+        # Run the simulation
+        simulation.run()
+        simulation.save_csv(f"{sim_path}/FullCAM_Ouput/{file_name}.csv")
+        df = simulation.to_dataframe()
+        df["layer"] = layer
+        df["idx"] = plot_idx
+        df["area_ha"] = area
+
+        all_results.append(df)
+
+    # After the loop completes, concatenate all results
+    combined_df = pd.concat(all_results, ignore_index=True)
+    combined_df.to_csv(f"{sim_path}/FullCAM_Ouput/all_results.csv", index=False)
+    combined_df.to_parquet(f"{sim_path}/FullCAM_Ouput/all_results.parquet", index=False)
+
+    return combined_df
+
+
+if __name__ == "__main__":
+    # Initialize the FullCAM client
+    client = FullCAMClient(version="2020")
+    template = "ERF\\Environmental Plantings Method.plo"
+    
+    cea_files= [
+        "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\_Scenarios_15May_2025_Talbot_KangarooC\\KangarooCamp\\Scenario_Base\\Shapefiles\\KangarooCamp_plantable_area_mid.geojson",
+        "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\_Scenarios_15May_2025_Talbot_KangarooC\\KangarooCamp\\Scenario_Best\\Shapefiles\\KangarooCamp_plantable_area_best.geojson",
+        "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\_Scenarios_15May_2025_Talbot_KangarooC\\KangarooCamp\\Scenario_Worst\\Shapefiles\\KangarooCamp_plantable_area_worst.geojson",
+        "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\_Scenarios_15May_2025_Talbot_KangarooC\\Talbot\\Scenario_Base\\Shapefiles\\Talbot_plantable_area_mid.geojson",
+        "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\_Scenarios_15May_2025_Talbot_KangarooC\\Talbot\\Scenario_Best\\Shapefiles\\Talbot_plantable_area_best.geojson",
+        "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\_Scenarios_15May_2025_Talbot_KangarooC\\Talbot\\Scenario_Worst\\Shapefiles\\Talbot_plantable_area_worst.geojson",
+    ]
+
+    for file_path in cea_files:
+        simulate_cea_from_stats(
+            file_path,
+            layer_property="CEA"
+        )
+        #simulate_cea(file_path, layer_property="CEA", model_points_method="from_stats")
+    
+
     # accus=('C mass of trees  (tC/ha)'+'C mass of forest debris  (tC/ha)')*'area_ha'*44/12*0.95
     # combined_df['accus'] = (combined_df['C mass of trees  (tC/ha)'] + combined_df['C mass of forest debris  (tC/ha)']) * combined_df['area_ha'] * 44 / 12 * 0.95
     # combined_df.to_csv(f"{sim_path}\\all_results_accus.csv", index=False)

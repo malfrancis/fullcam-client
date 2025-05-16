@@ -15,6 +15,8 @@ from xml.etree.ElementTree import Element
 
 import pandas as pd
 import pyarrow as pa
+import xarray as xr
+import numpy as np
 from blinker import signal
 from pyarrow import csv
 from pydantic import BaseModel, Field
@@ -194,6 +196,39 @@ class LocationInfo(BaseModel):
     long_term_average_FPI: float = 0.0
     forest_species: list[LocationSpecies] = Field(default_factory=list)
     location_soil: dict = Field(default_factory=dict)
+    #forest_productivity_index: xr.DataArray | None = None
+
+    def parse_timeseries_xml(self, root):
+        
+        # Extract metadata
+        start_year = int(root.get('yr0TS'))
+        num_years = int(root.get('nYrsTS'))
+        time_series_name = root.get('tInTS')
+        mult = float(root.get('multTS'))
+        
+        # Get raw data from the rawTS element
+        raw_data_str = root.find('rawTS').text
+        
+        # Split the comma-separated string and convert to float
+        raw_data = [float(x) for x in raw_data_str.split(',')]
+        
+        # Create time coordinates (years)
+        years = pd.date_range(start=f"{start_year}-01-01", periods=num_years, freq='YS')
+        
+        # Create xarray DataArray with time dimension
+        data_array = xr.DataArray(
+            data=np.array(raw_data),
+            dims=['time'],
+            coords={'time': years},
+            attrs={
+                'name': time_series_name,
+                'origin': root.get('tOriginTS'),
+                'multiplier': mult,
+                'extrapolation': root.get('tExtrapTS')
+            }
+        )
+        
+        return data_array    
 
     def __init__(self, location_root=None, **data):
         site_info = location_root.find("SiteInfo")
@@ -250,9 +285,15 @@ class LocationInfo(BaseModel):
         maxAbgMF = location_root.find("InputElement[@tIn='maxAbgMF']").get("value")
         if maxAbgMF is not None:
             data["maximum_aboveground_biomass"] = maxAbgMF
+
         fpiAvgLT = location_root.find("InputElement[@tIn='fpiAvgLT']").get("value")
         if fpiAvgLT is not None:
             data["long_term_average_FPI"] = fpiAvgLT
+
+        
+        forestProdIx = location_root.find("InputElement[@tIn='forestProdIx']")
+        if forestProdIx is not None:
+            data["forest_productivity_index"] = self.parse_timeseries_xml(forestProdIx.find("TimeSeries"))
 
         item_list = location_root.find("ItemList[@id='FrSpecies']")
         if item_list is not None:
