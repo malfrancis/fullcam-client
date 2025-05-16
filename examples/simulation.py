@@ -290,33 +290,33 @@ if __name__ == "__main__":
         simulation.build.latitude = center_y
         simulation.build.longitude = center_x
         simulation.build.forest_category = "ERF"
-        species_list = simulation.get_location_info()
+        simulation.download_location_info()
 
-        # find "Mixed species environmental planting" in the species list
-        species = [
-            species
-            for species in species_list
-            if "Mixed species environmental planting" in species["name"]
-        ]
-        # Get the first species in the list
-        if species:
-            env_planting = species[0]
-        else:
+        env_planting = next(
+            (
+                species
+                for species in simulation.location_info.forest_species
+                if "Mixed species environmental planting" in species.name
+            ),
+            None,  # Default value if not found
+        )
+        if env_planting is None:
             print(f"No species found for {layer}")
 
-        spec_xml = client.get_species_xml(
-            simulation.build.latitude,
-            simulation.build.longitude,
-            forest_category=simulation.build.forest_category,
-            species_id=env_planting["id"],
-        )
+        else:
+            spec_xml = client.get_species_xml(
+                simulation.build.latitude,
+                simulation.build.longitude,
+                forest_category=simulation.build.forest_category,
+                species_id=env_planting.id,
+            )
 
-        simulation.apply_species_xml(
-            spec_xml,
-            env_planting["id"],
-            "Plant trees: Mixed species environmental planting on land managed for environmental services",
-            plant_date,
-        )
+            simulation.apply_species_xml(
+                spec_xml,
+                env_planting.id,
+                "Plant trees: Mixed species environmental planting on land managed for environmental services",
+                plant_date,
+            )
 
         simulation.save_to_plo(f"{sim_path}/FullCAM_Plotfiles/{layer}.plo")
 
