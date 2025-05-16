@@ -182,13 +182,13 @@ if __name__ == "__main__":
     # file_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Kalimna_13May_2025\\Scenario_Best_2025_planting\\Shapefiles\\Kalimna_ceas_area_remain_best_thisyear.geojson"
     # file_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Kalimna_13May_2025\\Scenario_Best_2026_planting\\Shapefiles\\Kalimna_ceas_area_remain_best_nextyear.geojson"
 
-    file_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Beloka_13May_2025\\Scenario_Best\\Shapefiles\\Beloka_ceas_area_remain_best_2.geojson"
+    file_path = "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\Shapefiles\\BelokaCEAsMerged_XY.geojson"
 
     sim_path = file_path.split("\\Shapefiles")[0]
     property_file = file_path.split("\\Shapefiles\\")[-1].split(".")[0]
 
     layer_property = "CEA"
-    model_points_method = "from_stats"  # or centroid or visual_center
+    model_points_method = "visual_center"  # from_stats or centroid or visual_center
 
     if property_file.find("_best_") > 0:
         model_points_method = "centroid"
@@ -290,40 +290,33 @@ if __name__ == "__main__":
         simulation.build.latitude = center_y
         simulation.build.longitude = center_x
         simulation.build.forest_category = "ERF"
+        simulation.download_location_info()
 
-        xml = client.get_location_xml(
-            simulation.build.latitude,
-            simulation.build.longitude,
-            forest_category=simulation.build.forest_category,
+        env_planting = next(
+            (
+                species
+                for species in simulation.location_info.forest_species
+                if "Mixed species environmental planting" in species.name
+            ),
+            None,  # Default value if not found
         )
-
-        species_list = simulation.apply_location_xml(xml)
-
-        # find "Mixed species environmental planting" in the species list
-        species = [
-            species
-            for species in species_list
-            if "Mixed species environmental planting" in species["name"]
-        ]
-        # Get the first species in the list
-        if species:
-            env_planting = species[0]
-        else:
+        if env_planting is None:
             print(f"No species found for {layer}")
 
-        spec_xml = client.get_species_xml(
-            simulation.build.latitude,
-            simulation.build.longitude,
-            forest_category=simulation.build.forest_category,
-            species_id=env_planting["id"],
-        )
+        else:
+            spec_xml = client.get_species_xml(
+                simulation.build.latitude,
+                simulation.build.longitude,
+                forest_category=simulation.build.forest_category,
+                species_id=env_planting.id,
+            )
 
-        simulation.apply_species_xml(
-            spec_xml,
-            env_planting["id"],
-            "Plant trees: Mixed species environmental planting on land managed for environmental services",
-            plant_date,
-        )
+            simulation.apply_species_xml(
+                spec_xml,
+                env_planting.id,
+                "Plant trees: Mixed species environmental planting on land managed for environmental services",
+                plant_date,
+            )
 
         simulation.save_to_plo(f"{sim_path}/FullCAM_Plotfiles/{layer}.plo")
 

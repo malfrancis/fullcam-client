@@ -5,9 +5,11 @@ description = "A Python client for the FullCAM Plot API"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "blinker>=1.9.0",
     "geopandas>=1.0.1",
     "pandas>=2.2.3",
     "pyarrow>=20.0.0",
+    "pydantic>=2.11.4",
     "requests>=2.32.3",
     "stamina>=25.1.0",
 ]
