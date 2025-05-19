@@ -378,7 +378,8 @@ def simulate_cea_from_stats(
         center_y = row["center_y"]
         plot_idx = row["idx"]
 
-        area = projected_gdf.loc[projected_gdf[layer_property] == row[layer_property], "area_ha_albers"].any()
+        area = projected_gdf.loc[projected_gdf[layer_property] == row[layer_property], "area_ha_albers"].values[0]
+
         area *= row["frac"] 
 
         if "Plant Date" in gdf.columns:
