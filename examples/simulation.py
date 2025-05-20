@@ -47,7 +47,7 @@ def parse_array_string(array_str):
         return []
 
 
-def calculate_model_points(output_stats):
+def calculate_model_points(output_stats, method="less_than_mean"):
     df = pd.read_csv(output_stats)
     # Process each row
     results = []
@@ -56,29 +56,40 @@ def calculate_model_points(output_stats):
         center_x = parse_array_string(row["center_x"])
         center_y = parse_array_string(row["center_y"])
         values = parse_array_string(row["values"])
-        mean_value = row["mean"]
 
-        # Find the absolute differences between each value and the mean
-        differences = np.abs(np.array(values) - mean_value)
+        if method == "less_than_mean":
+            target_value = row["mean"]
+        elif method == "median":
+            target_value = row["median"]
+        else:
+            raise ValueError("Invalid method. Choose 'less_than_mean' or 'median'.")
 
-        # Get the index of the minimum difference
-        closest_idx = np.argmin(differences)
+        # Find the absolute differences between each value and the target value
+        differences = np.abs(np.array(values) - target_value)
 
-        closest_value = values[closest_idx]
-        # Get the corresponding center_x and center_y
-        result = {
-            "CEA": row["CEA"],
-            "mean": mean_value,
-            "closest_value": closest_value,
-            "difference": abs(closest_value - mean_value),
-            "center_x": center_x[closest_idx],
-            "center_y": center_y[closest_idx],
-        }
+        # Filter values less than or equal to the target value
+        valid_indices = [i for i, v in enumerate(values) if v <= target_value]
 
-        results.append(result)
+        if valid_indices:
+            # Get the index of the closest valid value
+            closest_idx = min(valid_indices, key=lambda i: differences[i])
+
+            closest_value = values[closest_idx]
+            # Get the corresponding center_x and center_y
+            result = {
+                "CEA": row["CEA"],
+                "target_value": target_value,
+                "closest_value": closest_value,
+                "difference": abs(closest_value - target_value),
+                "center_x": center_x[closest_idx],
+                "center_y": center_y[closest_idx],
+            }
+
+            results.append(result)
 
     # Create a DataFrame with the results
     return pd.DataFrame(results)
+
 
 def calculate_model_pixels(output_stats):
     df = pd.read_csv(output_stats)
@@ -181,7 +192,8 @@ def find_visual_center(polygon):
 #"C:\Development\MullionGroup\Wollemi-Demo\CEA-Stratification\_Scenarios_15May_2025_Talbot_KangarooC\KangarooCamp\Scenario_Base\Shapefiles\KangarooCamp_plantable_area_mid.geojson"
 def simulate_cea(file_path, 
                  layer_property = "CEA", 
-                 model_points_method = "from_stats" # from_stats or centroid or visual_center
+                 model_points_method = "from_stats", # from_stats or centroid or visual_center
+                 method="median"
                  ):
     client = FullCAMClient(version="2020")
     template = "ERF\\Environmental Plantings Method.plo"
@@ -195,9 +207,8 @@ def simulate_cea(file_path,
     )
 
     if model_points_method == "from_stats":
-        model_points_df = calculate_model_points(
-            f"{sim_path}\\FullCAM_ModelPoints\\output_stats.csv"
-        )
+        model_points_df = calculate_model_points(f"{sim_path}\\FullCAM_ModelPoints\\output_stats.csv", method=method)
+        
         model_points_gdf = pd.merge(gdf, model_points_df, on=layer_property, how="left")
 
         # First create points from center coordinates
@@ -480,11 +491,8 @@ if __name__ == "__main__":
     ]
 
     for file_path in cea_files:
-        simulate_cea_from_stats(
-            file_path,
-            layer_property="CEA"
-        )
-        #simulate_cea(file_path, layer_property="CEA", model_points_method="from_stats")
+        #simulate_cea_from_stats(file_path, layer_property="CEA")
+        simulate_cea(file_path, layer_property="CEA", model_points_method="from_stats", method="median")
     
 
     # accus=('C mass of trees  (tC/ha)'+'C mass of forest debris  (tC/ha)')*'area_ha'*44/12*0.95
