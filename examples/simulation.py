@@ -100,6 +100,7 @@ def calculate_model_pixels(output_stats):
         center_x = parse_array_string(row["center_x"])
         center_y = parse_array_string(row["center_y"])
         frac = parse_array_string(row["frac"])
+        m_value = parse_array_string(row["values"])
         cea = row["CEA"]
 
         for pixel_idx in range(len(frac)):
@@ -111,6 +112,7 @@ def calculate_model_pixels(output_stats):
                     "center_x": center_x[pixel_idx],
                     "center_y": center_y[pixel_idx],
                     "frac": frac[pixel_idx],
+                    "m_value": m_value[pixel_idx],
                 }
                 results.append(result)
 
@@ -208,7 +210,7 @@ def simulate_cea(file_path,
 
     if model_points_method == "from_stats":
         model_points_df = calculate_model_points(f"{sim_path}\\FullCAM_ModelPoints\\output_stats.csv", method=method)
-        
+
         model_points_gdf = pd.merge(gdf, model_points_df, on=layer_property, how="left")
 
         # First create points from center coordinates
@@ -365,7 +367,11 @@ def simulate_cea_from_stats(
 
     model_points_gdf = pd.merge(gdf, pixels_df, on=layer_property, how="left")
 
-    # First create points from center coordinates
+    # First create points from center coordinates transformed to the same CRS as the polygons
+    # Ensure the model_points_gdf is in the same CRS as gdf
+    crs = gdf.crs
+    crs1 = model_points_gdf.crs
+
     model_points_gdf["point_geometry"] = model_points_gdf.apply(
         lambda row: Point(row["center_x"], row["center_y"]), axis=1
     )
@@ -377,7 +383,10 @@ def simulate_cea_from_stats(
 
     # Drop the temporary point geometry column
     model_points_gdf.drop(columns=["point_geometry"], inplace=True)
-    model_points_gdf.to_file(model_points_filename, driver="GeoJSON")
+    
+    model_points_gda94_gdf = model_points_gdf.to_crs(epsg=4283) # GDA94
+    model_points_gda94_gdf.to_file(model_points_filename, driver="GeoJSON")
+    #model_points_gda2020_gdf = model_points_gdf.to_crs(epsg=7844) # GDA2020
 
     projected_gdf = gdf.to_crs(epsg=3577)  # Australian Albers Equal Area
     projected_gdf["area_ha_albers"] = projected_gdf.geometry.area / 10000
@@ -385,10 +394,11 @@ def simulate_cea_from_stats(
     all_results = []
     for idx, row in model_points_gdf.iterrows():
 
-        center_x = row["center_x"]
-        center_y = row["center_y"]
+        model_point = row["geometry"]
+        center_x = model_point.x
+        center_y = model_point.y
         plot_idx = row["idx"]
-
+        
         area = projected_gdf.loc[projected_gdf[layer_property] == row[layer_property], "area_ha_albers"].values[0]
 
         area *= row["frac"] 
@@ -410,17 +420,8 @@ def simulate_cea_from_stats(
 
         simulation = client.create_simulation_from_template(template, layer)
 
-        notes = {
-            "layer": layer,
-            "area": area,
-            "plant_date": plant_date.strftime("%Y-%m-%d"),
-            "model_point": {"latitude": center_y, "longitude": center_x},
-            "model_points_method": "model_pixels",
-            "configuration": config,
-            "properties": convert_for_json(row.drop("geometry").to_dict()),
-        }
+
         simulation.about.name = layer
-        simulation.about.notes = json.dumps(notes)
         simulation.timing.use_daily_timing = False
         simulation.timing.start_date = plant_date
         simulation.timing.end_date = plant_date + pd.DateOffset(years=25)
@@ -428,6 +429,33 @@ def simulate_cea_from_stats(
         simulation.build.longitude = center_x
         simulation.build.forest_category = "ERF"
         simulation.download_location_info()
+        long_term_average_FPI = simulation.location_info.long_term_average_FPI
+        maximum_aboveground_biomass = simulation.location_info.maximum_aboveground_biomass
+        m_value = row["m_value"]
+        if not np.isclose(m_value,maximum_aboveground_biomass):
+            print(
+                f"Warning: m_value {m_value} does not match maximum_aboveground_biomass {maximum_aboveground_biomass} for {layer}"
+            )
+        FPI = simulation.location_info.forest_productivity_index["raw_values"]
+        # compute tha average FPI
+        average_FPI = np.mean(FPI)
+
+        
+        
+        
+        notes = {
+            "layer": layer,
+            "area": area,
+            "plant_date": plant_date.strftime("%Y-%m-%d"),
+            "model_point": {"latitude": center_y, "longitude": center_x},
+            "model_points_method": "model_pixels",
+            "configuration": config,
+            "long_term_average_FPI": long_term_average_FPI,
+            "maximum_aboveground_biomass": maximum_aboveground_biomass,
+            "average_FPI": average_FPI,
+            "properties": convert_for_json(row.drop("geometry").to_dict()),
+        }
+        simulation.about.notes = json.dumps(notes)
 
         env_planting = next(
             (
@@ -491,8 +519,8 @@ if __name__ == "__main__":
     ]
 
     for file_path in cea_files:
-        #simulate_cea_from_stats(file_path, layer_property="CEA")
-        simulate_cea(file_path, layer_property="CEA", model_points_method="from_stats", method="median")
+        simulate_cea_from_stats(file_path, layer_property="CEA")
+        #simulate_cea(file_path, layer_property="CEA", model_points_method="from_stats", method="median")
     
 
     # accus=('C mass of trees  (tC/ha)'+'C mass of forest debris  (tC/ha)')*'area_ha'*44/12*0.95

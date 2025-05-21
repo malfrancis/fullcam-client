@@ -196,7 +196,7 @@ class LocationInfo(BaseModel):
     long_term_average_FPI: float = 0.0
     forest_species: list[LocationSpecies] = Field(default_factory=list)
     location_soil: dict = Field(default_factory=dict)
-    #forest_productivity_index: xr.DataArray | None = None
+    forest_productivity_index: dict = Field(default_factory=dict)
 
     def parse_timeseries_xml(self, root):
         
@@ -291,9 +291,24 @@ class LocationInfo(BaseModel):
             data["long_term_average_FPI"] = fpiAvgLT
 
         
-        forestProdIx = location_root.find("InputElement[@tIn='forestProdIx']")
-        if forestProdIx is not None:
-            data["forest_productivity_index"] = self.parse_timeseries_xml(forestProdIx.find("TimeSeries"))
+        forestProdIx_input_element = location_root.find("InputElement[@tIn='forestProdIx']")
+        if forestProdIx_input_element is not None:
+            forestProdIx = forestProdIx_input_element.find("TimeSeries")
+
+            if forestProdIx is not None:
+                data_forestProdIx = { 
+                    "tExtrapTS": forestProdIx.get("tExtrapTS"),
+                    "tOriginTS": forestProdIx.get("tOriginTS"),
+                    "yr0TS": int(forestProdIx.get("yr0TS", 0)),
+                    "nYrsTS": int(forestProdIx.get("nYrsTS", 0)),
+                    "dataPerYrTS": int(forestProdIx.get("dataPerYrTS", 1)),
+                }
+                raw_ts = forestProdIx.find("rawTS")
+                if raw_ts is not None:
+                    data_forestProdIx["raw_values"] = [
+                        float(i) for i in raw_ts.text.strip().split(",")
+                    ]    
+                data["forest_productivity_index"] = data_forestProdIx
 
         item_list = location_root.find("ItemList[@id='FrSpecies']")
         if item_list is not None:
