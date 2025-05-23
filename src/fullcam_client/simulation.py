@@ -199,36 +199,35 @@ class LocationInfo(BaseModel):
     forest_productivity_index: dict = Field(default_factory=dict)
 
     def parse_timeseries_xml(self, root):
-        
         # Extract metadata
-        start_year = int(root.get('yr0TS'))
-        num_years = int(root.get('nYrsTS'))
-        time_series_name = root.get('tInTS')
-        mult = float(root.get('multTS'))
-        
+        start_year = int(root.get("yr0TS"))
+        num_years = int(root.get("nYrsTS"))
+        time_series_name = root.get("tInTS")
+        mult = float(root.get("multTS"))
+
         # Get raw data from the rawTS element
-        raw_data_str = root.find('rawTS').text
-        
+        raw_data_str = root.find("rawTS").text
+
         # Split the comma-separated string and convert to float
-        raw_data = [float(x) for x in raw_data_str.split(',')]
-        
+        raw_data = [float(x) for x in raw_data_str.split(",")]
+
         # Create time coordinates (years)
-        years = pd.date_range(start=f"{start_year}-01-01", periods=num_years, freq='YS')
-        
+        years = pd.date_range(start=f"{start_year}-01-01", periods=num_years, freq="YS")
+
         # Create xarray DataArray with time dimension
         data_array = xr.DataArray(
             data=np.array(raw_data),
-            dims=['time'],
-            coords={'time': years},
+            dims=["time"],
+            coords={"time": years},
             attrs={
-                'name': time_series_name,
-                'origin': root.get('tOriginTS'),
-                'multiplier': mult,
-                'extrapolation': root.get('tExtrapTS')
-            }
+                "name": time_series_name,
+                "origin": root.get("tOriginTS"),
+                "multiplier": mult,
+                "extrapolation": root.get("tExtrapTS"),
+            },
         )
-        
-        return data_array    
+
+        return data_array
 
     def __init__(self, location_root=None, **data):
         site_info = location_root.find("SiteInfo")
@@ -240,7 +239,6 @@ class LocationInfo(BaseModel):
 
         data_location_soil = {}
         location_soil = location_root.find("LocnSoil")
-
 
         if location_soil is not None:
             data_location_soil["initFracDpma"] = float(location_soil.get("initFracDpma"))
@@ -267,7 +265,6 @@ class LocationInfo(BaseModel):
                         float(i) for i in raw_ts.text.strip().split(",")
                     ]
 
-
             soil_base = location_soil.find("SoilBase")
             """
                 <SoilZap id="forest" maxBiofNCRatio="" maxBiosNCRatio="" maxHumsNCRatio="" minBiofNCRatio="" minBiosNCRatio="" minHumsNCRatio="" fracHumfSopmToDpma="0.9" fracHumfLrpmToRpma="0.9" fracHumfMrpmToRpma="0.9" fracHumfSommToDpma="0.9" fracHumfLrmmToRpma="0.9" fracHumfMrmmToRpma="0.9" fracHumfMicrToXpma="0.9" fracDLitBkdnToDpma="1.0" fracRLitBkdnToRpma="1.0" dToRRatioInPres="0.2" doManuFromOffs="false" fracManuCMToDpma="0.49" fracManuCMToRpma="0.49" fracManuCMToBiof="0.0" fracManuCMToBios="0.0" manuDpmaNCRatio="100.0" manuRpmaNCRatio="100.0" manuBiofNCRatio="100.0" manuBiosNCRatio="100.0" manuHumsNCRatio="100.0" encpFracHums="0.0" sampleDepth="30.0" pH="6.0" evapoOpenRatio="0.75" bToCMaxTSMDRatio="0.556" sdcmRateMultDpma="10.0" sdcmRateMultRpma="0.17" sdcmRateMultBiofV263="0.66" sdcmRateMultBiosV263="0.66" sdcmRateMultHums="0.03" sdcmRateMultBiomCov="3.25" fracPbioToBiofV263="0.46" fracPbioToBiofV265="0.28" fracPbioToBiosV265="0.18" fracHumsToBiosV263="0.46" fracHumsToBiofV265="0.28" fracHumsToBiosV265="0.18" richNCRatio="0.01" poorNCRatio="0.001" fracDpmaToStorMyco="0.0" fracRpmaToStorMyco="0.0" fracBiofToStorMyco="0.0" fracBiosToStorMyco="0.0" />
@@ -290,13 +287,12 @@ class LocationInfo(BaseModel):
         if fpiAvgLT is not None:
             data["long_term_average_FPI"] = fpiAvgLT
 
-        
         forestProdIx_input_element = location_root.find("InputElement[@tIn='forestProdIx']")
         if forestProdIx_input_element is not None:
             forestProdIx = forestProdIx_input_element.find("TimeSeries")
 
             if forestProdIx is not None:
-                data_forestProdIx = { 
+                data_forestProdIx = {
                     "tExtrapTS": forestProdIx.get("tExtrapTS"),
                     "tOriginTS": forestProdIx.get("tOriginTS"),
                     "yr0TS": int(forestProdIx.get("yr0TS", 0)),
@@ -307,7 +303,7 @@ class LocationInfo(BaseModel):
                 if raw_ts is not None:
                     data_forestProdIx["raw_values"] = [
                         float(i) for i in raw_ts.text.strip().split(",")
-                    ]    
+                    ]
                 data["forest_productivity_index"] = data_forestProdIx
 
         item_list = location_root.find("ItemList[@id='FrSpecies']")

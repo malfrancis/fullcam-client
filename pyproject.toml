@@ -6,10 +6,12 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "blinker>=1.9.0",
+    "exactextract>=0.2.2",
     "geopandas>=1.0.1",
     "pandas>=2.2.3",
     "pyarrow>=20.0.0",
     "pydantic>=2.11.4",
+    "rasterio>=1.4.3",
     "requests>=2.32.3",
     "stamina>=25.1.0",
     "xarray>=2025.4.0",

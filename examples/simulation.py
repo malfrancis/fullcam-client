@@ -8,7 +8,7 @@ import pandas as pd
 from shapely.geometry import LineString, Point, box
 
 from fullcam_client import FullCAMClient
-
+import exactextract
 
 def convert_for_json(obj):
     """Convert non-serializable objects to serializable ones"""
@@ -91,33 +91,20 @@ def calculate_model_points(output_stats, method="less_than_mean"):
     return pd.DataFrame(results)
 
 
-def calculate_model_pixels(output_stats):
-    df = pd.read_csv(output_stats)
-    # Process each row
-    results = []
-    for idx, row in df.iterrows():
-        # Parse the string arrays into actual arrays
-        center_x = parse_array_string(row["center_x"])
-        center_y = parse_array_string(row["center_y"])
-        frac = parse_array_string(row["frac"])
-        m_value = parse_array_string(row["values"])
-        cea = row["CEA"]
+def calculate_model_pixels(gdf, layer_property, m_layer):
+    #df = pd.read_csv(output_stats)
 
-        for pixel_idx in range(len(frac)):
-            if frac[pixel_idx] > 0:
-                # Get the corresponding center_x and center_y
-                result = {
-                    "CEA": cea,
-                    "idx": pixel_idx+1,
-                    "center_x": center_x[pixel_idx],
-                    "center_y": center_y[pixel_idx],
-                    "frac": frac[pixel_idx],
-                    "m_value": m_value[pixel_idx],
-                }
-                results.append(result)
+    # Get area-weighted statistics with exact coverage
+    df = exactextract.exact_extract(
+        m_layer,
+        gdf,
+        ["cell_id", "mean", "sum", "count", "center_x", "center_y", "coverage", "values"],
+        include_cols=[layer_property],
+        output="pandas",
+    )
 
-    # Create a DataFrame with the results
-    return pd.DataFrame(results)
+    return df.explode(['cell_id','center_x', 'center_y', 'coverage', 'values'])
+
 
 def ensure_point_in_polygon(row, cell_size=0.0025):
     """
@@ -136,12 +123,12 @@ def ensure_point_in_polygon(row, cell_size=0.0025):
     pad = cell_size / 2
     # Create a box around the point
     cell = box(x - pad, y - pad, x + pad, y + pad)
-    #print(f"Cell: {cell.wkt}")
+    # print(f"Cell: {cell.wkt}")
     # Check if the cell intersects with the polygon
     if cell.intersects(polygon):
         # Get the intersection between the cell and the polygon
         intersection = cell.intersection(polygon)
-        #print(f"Intersection: {intersection.wkt}")
+        # print(f"Intersection: {intersection.wkt}")
         # Use representative_point to get a point guaranteed to be within the intersection
         return intersection.representative_point()
 
@@ -191,12 +178,14 @@ def find_visual_center(polygon):
     # Last resort - use representative point
     return sample_poly.representative_point()
 
-#"C:\Development\MullionGroup\Wollemi-Demo\CEA-Stratification\_Scenarios_15May_2025_Talbot_KangarooC\KangarooCamp\Scenario_Base\Shapefiles\KangarooCamp_plantable_area_mid.geojson"
-def simulate_cea(file_path, 
-                 layer_property = "CEA", 
-                 model_points_method = "from_stats", # from_stats or centroid or visual_center
-                 method="median"
-                 ):
+
+# "C:\Development\MullionGroup\Wollemi-Demo\CEA-Stratification\_Scenarios_15May_2025_Talbot_KangarooC\KangarooCamp\Scenario_Base\Shapefiles\KangarooCamp_plantable_area_mid.geojson"
+def simulate_cea(
+    file_path,
+    layer_property="CEA",
+    model_points_method="from_stats",  # from_stats or centroid or visual_center
+    method="median",
+):
     client = FullCAMClient(version="2020")
     template = "ERF\\Environmental Plantings Method.plo"
     sim_path = file_path.split("\\Shapefiles")[0]
@@ -209,7 +198,9 @@ def simulate_cea(file_path,
     )
 
     if model_points_method == "from_stats":
-        model_points_df = calculate_model_points(f"{sim_path}\\FullCAM_ModelPoints\\output_stats.csv", method=method)
+        model_points_df = calculate_model_points(
+            f"{sim_path}\\FullCAM_ModelPoints\\output_stats.csv", method=method
+        )
 
         model_points_gdf = pd.merge(gdf, model_points_df, on=layer_property, how="left")
 
@@ -232,7 +223,10 @@ def simulate_cea(file_path,
     elif model_points_method == "visual_center":
         model_points_gdf = gdf.copy()
         model_points_gdf.geometry = gdf.geometry.apply(find_visual_center)
-    model_points_gdf.to_file(model_points_filename, driver="GeoJSON")
+
+    model_points_gda94_gdf = model_points_gdf.to_crs(epsg=4283)  # GDA94
+    model_points_gda94_gdf.to_file(model_points_filename, driver="GeoJSON")
+    # model_points_gda2020_gdf = model_points_gdf.to_crs(epsg=7844) # GDA2020
 
     projected_gdf = gdf.to_crs(epsg=3577)  # Australian Albers Equal Area
     projected_gdf["centroid"] = projected_gdf.geometry.centroid
@@ -240,58 +234,32 @@ def simulate_cea(file_path,
 
     all_results = []
 
-    for i in range(len(gdf)):
-        if model_points_method == "centroid":
-            model_point = gdf.at[i, "geometry"].centroid
-            center_x = model_point.x
-            center_y = model_point.y
-        elif model_points_method == "from_stats":
-            cea_model_points = pd.merge(gdf, model_points_df, on=layer_property, how='left')
-            center_x = cea_model_points.at[i, "center_x"]
-            center_y = cea_model_points.at[i, "center_y"]
-        elif model_points_method == "representative_point":
-            model_point = gdf.at[i, "geometry"].representative_point()
-            center_x = model_point.x
-            center_y = model_point.y
-        elif model_points_method == "visual_center":
-            model_point = find_visual_center(gdf.at[i, "geometry"])
-            center_x = model_point.x
-            center_y = model_point.y
-        else:
-            raise ValueError(
-                "Invalid model_points_method. Choose 'centroid', 'from_stats', or 'representative_point'."
-            )
+    for idx, row in model_points_gda94_gdf.iterrows():
+        model_point = row["geometry"]
+        center_x = model_point.x
+        center_y = model_point.y
 
-        area = projected_gdf.at[i, "area_ha_albers"]
+        area = projected_gdf.loc[
+            projected_gdf[layer_property] == row[layer_property], "area_ha_albers"
+        ].values[0]
 
         if "Plant Date" in gdf.columns:
-            plant_date = gdf.at[i, "Plant Date"]
+            plant_date = row["Plant Date"]
         elif "Plant" in gdf.columns:
-            year = int(gdf.at[i, "Plant"])
+            year = int(row["Plant"])
             plant_date = pd.Timestamp(f"{year}-09-01")
         else:
             plant_date = pd.Timestamp("2025-09-01")
 
         if "Configuration" in gdf.columns:
-            config = gdf.at[i, "Configuration"]
+            config = row["Configuration"]
         else:
             config = "EP"
 
-        layer = gdf.at[i, layer_property]
+        layer = row[layer_property]
 
         simulation = client.create_simulation_from_template(template, layer)
-
-        notes = {
-            "layer": layer,
-            "area": area,
-            "plant_date": plant_date.strftime("%Y-%m-%d"),
-            "model_point": {"latitude": center_y, "longitude": center_x},
-            "model_points_method": model_points_method,
-            "configuration": config,
-            "properties": convert_for_json(gdf.iloc[i].drop("geometry").to_dict()),
-        }
         simulation.about.name = layer
-        simulation.about.notes = json.dumps(notes)
         simulation.timing.use_daily_timing = False
         simulation.timing.start_date = plant_date
         simulation.timing.end_date = plant_date + pd.DateOffset(years=25)
@@ -299,6 +267,30 @@ def simulate_cea(file_path,
         simulation.build.longitude = center_x
         simulation.build.forest_category = "ERF"
         simulation.download_location_info()
+        long_term_average_FPI = simulation.location_info.long_term_average_FPI
+        maximum_aboveground_biomass = simulation.location_info.maximum_aboveground_biomass
+        m_value = row["closest_value"]
+        if not np.isclose(m_value, maximum_aboveground_biomass):
+            print(
+                f"Warning: m_value {m_value} does not match maximum_aboveground_biomass {maximum_aboveground_biomass} for {layer}"
+            )
+        FPI = simulation.location_info.forest_productivity_index["raw_values"]
+        # compute tha average FPI
+        average_FPI = np.mean(FPI)
+
+        notes = {
+            "layer": layer,
+            "area": area,
+            "plant_date": plant_date.strftime("%Y-%m-%d"),
+            "model_point": {"latitude": center_y, "longitude": center_x},
+            "model_points_method": "model_pixels",
+            "configuration": config,
+            "long_term_average_FPI": long_term_average_FPI,
+            "maximum_aboveground_biomass": maximum_aboveground_biomass,
+            "average_FPI": average_FPI,
+            "properties": convert_for_json(row.drop("geometry").to_dict()),
+        }
+        simulation.about.notes = json.dumps(notes)
 
         env_planting = next(
             (
@@ -344,11 +336,7 @@ def simulate_cea(file_path,
     return combined_df
 
 
-def simulate_cea_from_stats(
-    file_path,
-    layer_property="CEA"
-):
-    
+def simulate_cea_cells(file_path, layer_property="CEA", m_layer=None):
     client = FullCAMClient(version="2020")
     template = "ERF\\Environmental Plantings Method.plo"
     sim_path = file_path.split("\\Shapefiles")[0]
@@ -360,17 +348,9 @@ def simulate_cea_from_stats(
         f"{sim_path}\\FullCAM_ModelPoints\\{property_file}_representative_points.geojson"
     )
 
-    pixels_df = calculate_model_pixels(
-        f"{sim_path}\\FullCAM_ModelPoints\\output_stats.csv"
-    )
-
+    pixels_df = calculate_model_pixels(gdf, layer_property=layer_property, m_layer=m_layer)
 
     model_points_gdf = pd.merge(gdf, pixels_df, on=layer_property, how="left")
-
-    # First create points from center coordinates transformed to the same CRS as the polygons
-    # Ensure the model_points_gdf is in the same CRS as gdf
-    crs = gdf.crs
-    crs1 = model_points_gdf.crs
 
     model_points_gdf["point_geometry"] = model_points_gdf.apply(
         lambda row: Point(row["center_x"], row["center_y"]), axis=1
@@ -383,25 +363,29 @@ def simulate_cea_from_stats(
 
     # Drop the temporary point geometry column
     model_points_gdf.drop(columns=["point_geometry"], inplace=True)
-    
-    model_points_gda94_gdf = model_points_gdf.to_crs(epsg=4283) # GDA94
+
+    model_points_gda94_gdf = model_points_gdf.to_crs(epsg=4283)  # GDA94
     model_points_gda94_gdf.to_file(model_points_filename, driver="GeoJSON")
-    #model_points_gda2020_gdf = model_points_gdf.to_crs(epsg=7844) # GDA2020
+    
+    # model_points_gda2020_gdf = model_points_gdf.to_crs(epsg=7844) # GDA2020
+    # projected_gda2020_gdf = gdf.to_crs('EPSG:9473') # Australian Albers GDA2020
 
     projected_gdf = gdf.to_crs(epsg=3577)  # Australian Albers Equal Area
     projected_gdf["area_ha_albers"] = projected_gdf.geometry.area / 10000
 
     all_results = []
-    for idx, row in model_points_gdf.iterrows():
-
+    for idx, row in model_points_gda94_gdf.iterrows():
         model_point = row["geometry"]
         center_x = model_point.x
         center_y = model_point.y
-        plot_idx = row["idx"]
-        
-        area = projected_gdf.loc[projected_gdf[layer_property] == row[layer_property], "area_ha_albers"].values[0]
+        plot_idx = row["cell_id"]
+        coverage = row["coverage"]
+        count = row["count"]
+        area = projected_gdf.loc[
+            projected_gdf[layer_property] == row[layer_property], "area_ha_albers"
+        ].values[0]
 
-        area *= row["frac"] 
+        area *= (coverage / count)
 
         if "Plant Date" in gdf.columns:
             plant_date = row["Plant Date"]
@@ -420,7 +404,6 @@ def simulate_cea_from_stats(
 
         simulation = client.create_simulation_from_template(template, layer)
 
-
         simulation.about.name = layer
         simulation.timing.use_daily_timing = False
         simulation.timing.start_date = plant_date
@@ -431,8 +414,8 @@ def simulate_cea_from_stats(
         simulation.download_location_info()
         long_term_average_FPI = simulation.location_info.long_term_average_FPI
         maximum_aboveground_biomass = simulation.location_info.maximum_aboveground_biomass
-        m_value = row["m_value"]
-        if not np.isclose(m_value,maximum_aboveground_biomass):
+        m_value = row["values"]
+        if not np.isclose(m_value, maximum_aboveground_biomass):
             print(
                 f"Warning: m_value {m_value} does not match maximum_aboveground_biomass {maximum_aboveground_biomass} for {layer}"
             )
@@ -440,9 +423,6 @@ def simulate_cea_from_stats(
         # compute tha average FPI
         average_FPI = np.mean(FPI)
 
-        
-        
-        
         notes = {
             "layer": layer,
             "area": area,
@@ -508,8 +488,9 @@ if __name__ == "__main__":
     # Initialize the FullCAM client
     client = FullCAMClient(version="2020")
     template = "ERF\\Environmental Plantings Method.plo"
-    
-    cea_files= [
+    m_layer = "C:\\Development\\MullionGroup\\Wollemi-Demo\\FullCAM\\Input Data\\New_M_2019\\New_M_2019.tif"
+
+    cea_files = [
         "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\_Scenarios_15May_2025_Talbot_KangarooC\\KangarooCamp\\Scenario_Base\\Shapefiles\\KangarooCamp_plantable_area_mid.geojson",
         "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\_Scenarios_15May_2025_Talbot_KangarooC\\KangarooCamp\\Scenario_Best\\Shapefiles\\KangarooCamp_plantable_area_best.geojson",
         "C:\\Development\\MullionGroup\\Wollemi-Demo\\CEA-Stratification\\_Scenarios_15May_2025_Talbot_KangarooC\\KangarooCamp\\Scenario_Worst\\Shapefiles\\KangarooCamp_plantable_area_worst.geojson",
@@ -519,9 +500,8 @@ if __name__ == "__main__":
     ]
 
     for file_path in cea_files:
-        simulate_cea_from_stats(file_path, layer_property="CEA")
-        #simulate_cea(file_path, layer_property="CEA", model_points_method="from_stats", method="median")
-    
+        simulate_cea_cells(file_path, layer_property="CEA", m_layer=m_layer)
+        # simulate_cea(file_path, layer_property="CEA", model_points_method="from_stats", method="less_than_mean")
 
     # accus=('C mass of trees  (tC/ha)'+'C mass of forest debris  (tC/ha)')*'area_ha'*44/12*0.95
     # combined_df['accus'] = (combined_df['C mass of trees  (tC/ha)'] + combined_df['C mass of forest debris  (tC/ha)']) * combined_df['area_ha'] * 44 / 12 * 0.95
