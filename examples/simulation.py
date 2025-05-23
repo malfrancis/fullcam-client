@@ -1,5 +1,4 @@
 import json
-import re
 from datetime import date, datetime
 
 import geopandas as gpd
@@ -9,6 +8,7 @@ from shapely.geometry import LineString, Point, box
 
 from fullcam_client import FullCAMClient
 import exactextract
+
 
 def convert_for_json(obj):
     """Convert non-serializable objects to serializable ones"""
@@ -31,38 +31,39 @@ def convert_for_json(obj):
     return obj
 
 
-# Function to parse string representations of arrays into actual lists
-def parse_array_string(array_str):
-    try:
-        # Use json.loads to parse the string as a JSON array
-        return json.loads(array_str)
-    except:
-        # If json.loads fails, try using regex to extract values
-        pattern = r"\[(.*?)\]"
-        match = re.search(pattern, array_str)
-        if match:
-            values_str = match.group(1)
-            values = [float(val.strip()) for val in values_str.split(",")]
-            return values
-        return []
+def calculate_model_points(cells_df, method="less_than_mean"):
+    df = (
+        cells_df.groupby(["CEA", "mean", "median", "coefficient_of_variation", "sum", "count"])
+        .apply(
+            lambda x: pd.Series(
+                {
+                    "cells": x[["cell_id", "center_x", "center_y", "values", "coverage"]].to_dict(
+                        "records"
+                    )
+                }
+            )
+        )
+        .reset_index()
+    )
 
+    print(df.head())
 
-def calculate_model_points(output_stats, method="less_than_mean"):
-    df = pd.read_csv(output_stats)
     # Process each row
     results = []
     for _, row in df.iterrows():
-        # Parse the string arrays into actual arrays
-        center_x = parse_array_string(row["center_x"])
-        center_y = parse_array_string(row["center_y"])
-        values = parse_array_string(row["values"])
-
         if method == "less_than_mean":
             target_value = row["mean"]
         elif method == "median":
             target_value = row["median"]
         else:
             raise ValueError("Invalid method. Choose 'less_than_mean' or 'median'.")
+
+        # Extract arrays from the cells
+        cells = row["cells"]
+        center_x = [cell["center_x"] for cell in cells]
+        center_y = [cell["center_y"] for cell in cells]
+        values = [cell["values"] for cell in cells]
+        cell_ids = [cell["cell_id"] for cell in cells]
 
         # Find the absolute differences between each value and the target value
         differences = np.abs(np.array(values) - target_value)
@@ -83,6 +84,12 @@ def calculate_model_points(output_stats, method="less_than_mean"):
                 "difference": abs(closest_value - target_value),
                 "center_x": center_x[closest_idx],
                 "center_y": center_y[closest_idx],
+                "cell_id": cell_ids[closest_idx],  # Added cell_id for reference
+                "mean": row["mean"],
+                "median": row["median"],
+                "coefficient_of_variation": row["coefficient_of_variation"],
+                "sum": row["sum"],
+                "count": row["count"],
             }
 
             results.append(result)
@@ -91,19 +98,30 @@ def calculate_model_points(output_stats, method="less_than_mean"):
     return pd.DataFrame(results)
 
 
-def calculate_model_pixels(gdf, layer_property, m_layer):
-    #df = pd.read_csv(output_stats)
+def calculate_model_cells(gdf, layer_property, m_layer):
+    # df = pd.read_csv(output_stats)
 
     # Get area-weighted statistics with exact coverage
     df = exactextract.exact_extract(
         m_layer,
         gdf,
-        ["cell_id", "mean", "sum", "count", "center_x", "center_y", "coverage", "values"],
+        [
+            "cell_id",
+            "mean",
+            "median",
+            "coefficient_of_variation",
+            "sum",
+            "count",
+            "center_x",
+            "center_y",
+            "coverage",
+            "values",
+        ],
         include_cols=[layer_property],
         output="pandas",
     )
 
-    return df.explode(['cell_id','center_x', 'center_y', 'coverage', 'values'])
+    return df.explode(["cell_id", "center_x", "center_y", "coverage", "values"])
 
 
 def ensure_point_in_polygon(row, cell_size=0.0025):
@@ -179,10 +197,10 @@ def find_visual_center(polygon):
     return sample_poly.representative_point()
 
 
-# "C:\Development\MullionGroup\Wollemi-Demo\CEA-Stratification\_Scenarios_15May_2025_Talbot_KangarooC\KangarooCamp\Scenario_Base\Shapefiles\KangarooCamp_plantable_area_mid.geojson"
 def simulate_cea(
     file_path,
     layer_property="CEA",
+    m_layer=None,
     model_points_method="from_stats",  # from_stats or centroid or visual_center
     method="median",
 ):
@@ -198,9 +216,9 @@ def simulate_cea(
     )
 
     if model_points_method == "from_stats":
-        model_points_df = calculate_model_points(
-            f"{sim_path}\\FullCAM_ModelPoints\\output_stats.csv", method=method
-        )
+        cells_df = calculate_model_cells(gdf, layer_property=layer_property, m_layer=m_layer)
+
+        model_points_df = calculate_model_points(cells_df, method=method)
 
         model_points_gdf = pd.merge(gdf, model_points_df, on=layer_property, how="left")
 
@@ -348,9 +366,9 @@ def simulate_cea_cells(file_path, layer_property="CEA", m_layer=None):
         f"{sim_path}\\FullCAM_ModelPoints\\{property_file}_representative_points.geojson"
     )
 
-    pixels_df = calculate_model_pixels(gdf, layer_property=layer_property, m_layer=m_layer)
+    cells_df = calculate_model_cells(gdf, layer_property=layer_property, m_layer=m_layer)
 
-    model_points_gdf = pd.merge(gdf, pixels_df, on=layer_property, how="left")
+    model_points_gdf = pd.merge(gdf, cells_df, on=layer_property, how="left")
 
     model_points_gdf["point_geometry"] = model_points_gdf.apply(
         lambda row: Point(row["center_x"], row["center_y"]), axis=1
@@ -366,7 +384,7 @@ def simulate_cea_cells(file_path, layer_property="CEA", m_layer=None):
 
     model_points_gda94_gdf = model_points_gdf.to_crs(epsg=4283)  # GDA94
     model_points_gda94_gdf.to_file(model_points_filename, driver="GeoJSON")
-    
+
     # model_points_gda2020_gdf = model_points_gdf.to_crs(epsg=7844) # GDA2020
     # projected_gda2020_gdf = gdf.to_crs('EPSG:9473') # Australian Albers GDA2020
 
@@ -385,7 +403,7 @@ def simulate_cea_cells(file_path, layer_property="CEA", m_layer=None):
             projected_gdf[layer_property] == row[layer_property], "area_ha_albers"
         ].values[0]
 
-        area *= (coverage / count)
+        area *= coverage / count
 
         if "Plant Date" in gdf.columns:
             plant_date = row["Plant Date"]
@@ -500,8 +518,14 @@ if __name__ == "__main__":
     ]
 
     for file_path in cea_files:
-        simulate_cea_cells(file_path, layer_property="CEA", m_layer=m_layer)
-        # simulate_cea(file_path, layer_property="CEA", model_points_method="from_stats", method="less_than_mean")
+        # simulate_cea_cells(file_path, layer_property="CEA", m_layer=m_layer)
+        simulate_cea(
+            file_path,
+            layer_property="CEA",
+            m_layer=m_layer,
+            model_points_method="from_stats",
+            method="median",
+        )
 
     # accus=('C mass of trees  (tC/ha)'+'C mass of forest debris  (tC/ha)')*'area_ha'*44/12*0.95
     # combined_df['accus'] = (combined_df['C mass of trees  (tC/ha)'] + combined_df['C mass of forest debris  (tC/ha)']) * combined_df['area_ha'] * 44 / 12 * 0.95
